@@ -180,6 +180,30 @@ function devbox-init() {
     echo "🐳 Creating backend Dockerfile..."
     cp "$tpl_dir/Dockerfile.backend.base" "$PROJECT_ROOT/src/backend/Dockerfile"
   fi
+
+  # --- Optional IDE Injection ---
+  echo ""
+  read -p "🤔 Do you want to inject the Containerized Terminal IDE (Neovim/Lazygit)? [y/N] " inject_ide
+  if [[ "$inject_ide" =~ ^[Yy]$ ]]; then
+    echo "💉 Injecting Neovim & Lazygit into Dockerfiles..."
+
+    # Robust Injection: Read the injection file, append it after the marker, then delete the marker.
+
+    # Inject into Frontend
+    sed -i -e '/# @DEVBOX_IDE_INJECTION_POINT@/r '"$tpl_dir/ide_injection.dockerfile" -e '/# @DEVBOX_IDE_INJECTION_POINT@/d' "$PROJECT_ROOT/src/frontend/Dockerfile"
+
+    # Inject into Backend
+    sed -i -e '/# @DEVBOX_IDE_INJECTION_POINT@/r '"$tpl_dir/ide_injection.dockerfile" -e '/# @DEVBOX_IDE_INJECTION_POINT@/d' "$PROJECT_ROOT/src/backend/Dockerfile"
+
+    echo "✅ IDE successfully injected!"
+  else
+    echo "⏩ Skipping IDE injection. (Containers will remain lightweight for VS Code/JetBrains)."
+    # Clean up the unused markers from the generated files
+    sed -i '/# @DEVBOX_IDE_INJECTION_POINT@/d' "$PROJECT_ROOT/src/frontend/Dockerfile"
+    sed -i '/# @DEVBOX_IDE_INJECTION_POINT@/d' "$PROJECT_ROOT/src/backend/Dockerfile"
+  fi
+  # -----------------------------------
+
   # 3. Environment Variables (.env)
   if [ ! -f "$PROJECT_ROOT/.env" ]; then
     echo "🔐 Creating .env file..."

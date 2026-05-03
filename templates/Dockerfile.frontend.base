@@ -25,6 +25,7 @@ RUN mkdir -p /home/node/.config /home/node/.local/share /home/node/.local/state 
 
 # (The 'node' user is already created automatically by the node:20-slim image)
 # (Future Neovim/Lazygit installation scripts will go here)
+# @DEVBOX_IDE_INJECTION_POINT@
 
 # Switch to the built-in non-root user
 USER node

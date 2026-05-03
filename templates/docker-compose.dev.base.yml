@@ -4,6 +4,7 @@ services:
       target: dev
       args:
         - NEOVIM_VERSION=${NEOVIM_VERSION:-stable}
+        - LAZYGIT_VERSION=${LAZYGIT_VERSION:-stable}
     user: "${UID}:${GID}"
     volumes:
       - ./src/frontend:/app
@@ -18,6 +19,7 @@ services:
       target: dev
       args:
         - NEOVIM_VERSION=${NEOVIM_VERSION:-stable}
+        - LAZYGIT_VERSION=${LAZYGIT_VERSION:-stable}
     user: "${UID}:${GID}"
     volumes:
       - ./src/backend:/app

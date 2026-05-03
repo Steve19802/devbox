@@ -25,6 +25,7 @@ RUN useradd -m -s /bin/bash devuser && \
   chown -R devuser:devuser /home/devuser/.config /home/devuser/.local
 
 # (Future Neovim/Lazygit installation scripts will go here)
+# @DEVBOX_IDE_INJECTION_POINT@
 
 # Switch to the non-root user
 USER devuser
