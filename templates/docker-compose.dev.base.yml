@@ -1,0 +1,28 @@
+services:
+  frontend:
+    build:
+      target: dev
+      args:
+        - NEOVIM_VERSION=${NEOVIM_VERSION:-stable}
+    user: "${UID}:${GID}"
+    volumes:
+      - ./src/frontend:/app
+      - ~/.config/nvim:/home/node/.config/nvim
+      - ./src/frontend/.nvim/share/nvim:/home/node/.local/share/nvim
+      - ./src/frontend/.nvim/state/nvim:/home/node/.local/state/nvim
+    environment:
+      - HOME=/home/node
+      
+  backend:
+    build:
+      target: dev
+      args:
+        - NEOVIM_VERSION=${NEOVIM_VERSION:-stable}
+    user: "${UID}:${GID}"
+    volumes:
+      - ./src/backend:/app
+      - ~/.config/nvim:/home/devuser/.config/nvim
+      - ./src/backend/.nvim/share/nvim:/home/devuser/.local/share/nvim
+      - ./src/backend/.nvim/state/nvim:/home/devuser/.local/state/nvim
+    environment:
+      - HOME=/home/devuser

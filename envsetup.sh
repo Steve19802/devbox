@@ -53,59 +53,8 @@ function devbox-ai-setup() {
     -e BASE_DIR="$base_dir" \
     -e PROJ_DIR="$proj_dir" \
     -e OUT_DIR="$out_dir" \
-    python:3.11-slim python -c "
-import json, os, shutil
+    python:3.11-slim python /workspace/build/scripts/compile_ai.py
 
-base_dir = os.environ['BASE_DIR']
-proj_dir = os.environ['PROJ_DIR']
-out_dir = os.environ['OUT_DIR']
-
-def merge_dict(a, b):
-    for k, v in b.items():
-        if isinstance(v, dict) and k in a and isinstance(a[k], dict):
-            merge_dict(a[k], v)
-        else:
-            a[k] = v
-    return a
-
-def overlay_dirs(src, dst):
-    if not os.path.exists(src): return
-    os.makedirs(dst, exist_ok=True)
-    for item in os.listdir(src):
-        s = os.path.join(src, item)
-        d = os.path.join(dst, item)
-        if item.endswith('.json'): continue
-        if os.path.isdir(s):
-            overlay_dirs(s, d)
-        else:
-            shutil.copy2(s, d)
-
-if os.path.exists(out_dir):
-    shutil.rmtree(out_dir)
-os.makedirs(out_dir, exist_ok=True)
-
-overlay_dirs(base_dir, out_dir)
-overlay_dirs(proj_dir, out_dir)
-
-base_jsons = set(f for f in os.listdir(base_dir) if f.endswith('.json')) if os.path.exists(base_dir) else set()
-proj_jsons = set(f for f in os.listdir(proj_dir) if f.endswith('.json')) if os.path.exists(proj_dir) else set()
-
-for jf in base_jsons.union(proj_jsons):
-    b_path = os.path.join(base_dir, jf)
-    p_path = os.path.join(proj_dir, jf)
-    o_path = os.path.join(out_dir, jf)
-    
-    b_data = {}
-    if os.path.exists(b_path):
-        with open(b_path) as f: b_data = json.load(f)
-        
-    p_data = {}
-    if os.path.exists(p_path):
-        with open(p_path) as f: p_data = json.load(f)
-        
-    merged = merge_dict(b_data, p_data)
-    with open(o_path, 'w') as f: json.dump(merged, f, indent=2)
-"
   echo "✅ Activated $target_tool! You can now launch your IDE."
 }
 # --- Docker Compose Helpers (V2) ---
@@ -192,17 +141,27 @@ function devbox-init() {
   mkdir -p "$PROJECT_ROOT/src/backend"
   mkdir -p "$PROJECT_ROOT/ai"
 
-  # 2. Base .gitignore
-  if [ ! -f "$PROJECT_ROOT/.gitignore" ]; then
+  # 2. Copy base Templates
+  local tpl_dir="$PROJECT_ROOT/build/templates"
+
+  if [ ! -f "$PROJECT_ROOT/.gitignore" ] && [ -f "$tpl_dir/gitignore.base" ]; then
     echo "📄 Creating .gitignore..."
-    cat <<'EOF' >"$PROJECT_ROOT/.gitignore"
-.opencode/
-.cursor/
-.windsurf/
-node_modules/
-__pycache__/
-*.env
-EOF
+    cp "$tpl_dir/gitignore.base" "$PROJECT_ROOT/.gitignore"
+  fi
+
+  if [ ! -f "$PROJECT_ROOT/docker-compose.yml" ] && [ -f "$tpl_dir/docker-compose.base.yml" ]; then
+    echo "🐳 Creating base docker-compose.yml..."
+    cp "$tpl_dir/docker-compose.base.yml" "$PROJECT_ROOT/docker-compose.yml"
+  fi
+
+  if [ ! -f "$PROJECT_ROOT/docker-compose.dev.yml" ] && [ -f "$tpl_dir/docker-compose.dev.base.yml" ]; then
+    echo "🛠️ Creating docker-compose.dev.yml..."
+    cp "$tpl_dir/docker-compose.dev.base.yml" "$PROJECT_ROOT/docker-compose.dev.yml"
+  fi
+
+  if [ ! -f "$PROJECT_ROOT/ARCHITECTURE.md" ] && [ -f "$tpl_dir/ARCHITECTURE.base.md" ]; then
+    echo "📝 Creating ARCHITECTURE.md..."
+    cp "$tpl_dir/ARCHITECTURE.base.md" "$PROJECT_ROOT/ARCHITECTURE.md"
   fi
 
   # 3. Environment Variables (.env)
@@ -222,60 +181,6 @@ GID=${LOCAL_GID}
 # it's recommended to match with the host version
 NEOVIM_VERSION=v0.11.6
 LAZYGIT_VERSION=0.60.0
-EOF
-  fi
-
-  # 4. Base docker-compose.yml
-  if [ ! -f "$PROJECT_ROOT/docker-compose.yml" ]; then
-    echo "🐳 Creating base docker-compose.yml..."
-    cat <<'EOF' >"$PROJECT_ROOT/docker-compose.yml"
-services:
-  frontend:
-    build: 
-      context: ./src/frontend
-    ports:
-      - "5173:5173"
-      
-  backend:
-    build:
-      context: ./src/backend
-    ports:
-      - "8000:8000"
-EOF
-  fi
-
-  # 5. Dev Overrides docker-compose.dev.yml
-  if [ ! -f "$PROJECT_ROOT/docker-compose.dev.yml" ]; then
-    echo "🛠️ Creating docker-compose.dev.yml..."
-    cat <<'EOF' >"$PROJECT_ROOT/docker-compose.dev.yml"
-services:
-  frontend:
-    build:
-      target: dev
-      args:
-        - NEOVIM_VERSION=${NEOVIM_VERSION:-stable}
-    user: "${UID}:${GID}"
-    volumes:
-      - ./src/frontend:/app
-      - ~/.config/nvim:/home/node/.config/nvim
-      - ./src/frontend/.nvim/share/nvim:/home/node/.local/share/nvim
-      - ./src/frontend/.nvim/state/nvim:/home/node/.local/state/nvim
-    environment:
-      - HOME=/home/node
-      
-  backend:
-    build:
-      target: dev
-      args:
-        - NEOVIM_VERSION=${NEOVIM_VERSION:-stable}
-    user: "${UID}:${GID}"
-    volumes:
-      - ./src/backend:/app
-      - ~/.config/nvim:/home/devuser/.config/nvim
-      - ./src/backend/.nvim/share/nvim:/home/devuser/.local/share/nvim
-      - ./src/backend/.nvim/state/nvim:/home/devuser/.local/state/nvim
-    environment:
-      - HOME=/home/devuser
 EOF
   fi
 
