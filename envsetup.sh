@@ -228,6 +228,35 @@ EOF
   echo "Run 'devbox-toolchain' to set up your AI environment."
 }
 
+# ==========================================
+# --- 🪄 CLI Autocompletion Magic ---
+# ==========================================
+
+_devbox_service_completions() {
+  # COMP_WORDS is an array of words typed so far
+  # COMP_CWORD is the index of the word currently being typed
+  local curr_arg=${COMP_WORDS[COMP_CWORD]}
+
+  # Fetch available services dynamically using your existing helper!
+  local services=$(_get_services)
+
+  # compgen filters the $services list based on what the user typed ($curr_arg)
+  COMPREPLY=($(compgen -W "${services}" -- "${curr_arg}"))
+}
+
+_devbox_ai_completions() {
+  local curr_arg=${COMP_WORDS[COMP_CWORD]}
+
+  # Dynamically fetch AI tools from the build/ai directory, plus the "none" option
+  local tools="$(ls -1 "$PROJECT_ROOT/build/ai/" 2>/dev/null) none"
+
+  COMPREPLY=($(compgen -W "${tools}" -- "${curr_arg}"))
+}
+
+# Bind the completion functions to your specific CLI commands
+complete -F _devbox_service_completions devbox-logs devbox-run devbox-edit
+complete -F _devbox_ai_completions devbox-ai-setup
+
 echo "✅ DevBox Environment Loaded!"
 echo "💡 Available commands:"
 
