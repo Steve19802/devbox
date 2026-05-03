@@ -36,48 +36,6 @@ my-app/ (Project Root)
 │
 └── src/                      <-- 💻 BUSINESS LOGIC
     ├── frontend/             
-    └── backend/
-```
-
-
-# 🏗️ DevBox: Infrastructure & AI Toolchain
-
-Welcome to the **DevBox Platform**. This directory (`build/`) contains the immutable infrastructure, build scripts, and standard AI toolchains that power this project's local development environment.
-
-## 🌟 Core Philosophy
-
-This platform was engineered using enterprise-grade platform principles, heavily inspired by the Android Open Source Project (AOSP):
-
-1. **Zero Host Dependencies:** You only need Docker installed on your machine. No Python virtual environments, no Node version managers, no local databases polluting your host OS.
-2. **Strict Separation of Concerns:**
-   - `build/` = Immutable Infrastructure & Standard AI Tools.
-   - `src/` = Business Logic & Application Code.
-   - `ai/` = Mutable, Project-Specific AI Overrides.
-3. **AI-Native, Secure by Default:** AI agents (like OpenCode or Cursor) are granted orchestration powers via a sandboxed Model Context Protocol (MCP) server that dynamically discovers project containers without exposing your host machine.
-
----
-
-## 📂 Architecture Overview
-
-```text
-my-app/ (Project Root)
-│
-├── .env                      <-- Auto-generated: Host UID/GID & Tool versions
-├── docker-compose.yml        <-- LAYER 1: Production Base (Pure App)
-├── docker-compose.dev.yml    <-- LAYER 2: Dev Overrides (Volume Mounts, Neovim)
-├── .gitignore                <-- Ignores compiled AI configs (e.g., .opencode/)
-│
-├── build/                    <-- 🏗️ INFRASTRUCTURE (You are here)
-│   ├── envsetup.sh           <-- The CLI compiler & router
-│   ├── docker-compose.mcp.yml<-- LAYER 3: Platform Infra (DevBox MCP)
-│   ├── devbox-mcp/           <-- The Python MCP Docker Gateway
-│   └── ai/                   <-- The "Standard Library" of AI tools
-│
-├── ai/                       <-- 🧠 PROJECT AI (Mutable overrides)
-│   └── opencode/             <-- Project-specific AI settings
-│
-└── src/                      <-- 💻 BUSINESS LOGIC
-    ├── frontend/             
     └── backend/              
 ```
 
