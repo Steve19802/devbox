@@ -1,8 +1,7 @@
 services:
   devbox-mcp:
     build:
-      context: ./devbox-mcp
-    container_name: devbox-mcp
+      context: ./build/devbox-mcp
     ports:
       - "3000:3000"
     volumes:
