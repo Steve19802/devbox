@@ -235,4 +235,5 @@ echo "💡 Available commands:"
 # starting with an underscore (_), and print the clean function name.
 grep -oE '^function [^_][^ (]+' "${BASH_SOURCE[0]}" | awk '{print "   🚀 "$2}'
 
-echo "\nRun 'devbox-init' to scaffold your project"
+echo ""
+echo "Run 'devbox-init' to scaffold your project"
