@@ -13,6 +13,7 @@ services:
       - ./src/frontend/.nvim/state/nvim:/home/node/.local/state/nvim
     environment:
       - HOME=/home/node
+      - DEVBOX_SERVICE=frontend
       
   backend:
     build:
@@ -28,3 +29,4 @@ services:
       - ./src/backend/.nvim/state/nvim:/home/devuser/.local/state/nvim
     environment:
       - HOME=/home/devuser
+      - DEVBOX_SERVICE=backend
