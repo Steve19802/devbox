@@ -131,10 +131,10 @@ function devbox-logs() {
   # If no argument is passed, show all logs. Otherwise, show logs for the specific service.
   if [ -z "$1" ]; then
     echo "📜 Tailing logs for all services (Press CTRL+C to exit)..."
-    docker compose logs -f
+    docker compose $DEVBOX_COMPOSE_ARGS logs -f
   else
     echo "📜 Tailing logs for $1 (Press CTRL+C to exit)..."
-    docker compose logs -f "$1"
+    docker compose $DEVBOX_COMPOSE_ARGS logs -f "$1"
   fi
 }
 
