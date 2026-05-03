@@ -1,0 +1,31 @@
+# --- STAGE 1: Production Base ---
+FROM python:3.11-slim AS prod
+
+WORKDIR /app
+# (In a real app, you would pip install and copy code here)
+CMD ["python", "-m", "http.server", "8000"]
+
+# --- STAGE 2: Development / Neovim Environment ---
+FROM prod AS dev
+
+# Accept build arguments from docker-compose.dev.yml
+ARG NEOVIM_VERSION=stable
+ARG LAZYGIT_VERSION=stable
+
+# Install required system dependencies for Neovim and development
+RUN apt-get update && apt-get install -y \
+  curl \
+  git \
+  build-essential \
+  && rm -rf /var/lib/apt/lists/*
+
+# Create the devuser that your compose file expects
+RUN useradd -m -s /bin/bash devuser
+
+# (Future Neovim/Lazygit installation scripts will go here)
+
+# Switch to the non-root user
+USER devuser
+
+# Keep the container alive for live-reloading / development
+CMD ["sleep", "infinity"]

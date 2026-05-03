@@ -164,6 +164,15 @@ function devbox-init() {
     cp "$tpl_dir/ARCHITECTURE.base.md" "$PROJECT_ROOT/ARCHITECTURE.md"
   fi
 
+  if [ ! -f "$PROJECT_ROOT/src/frontend/Dockerfile" ] && [ -f "$tpl_dir/Dockerfile.frontend.base" ]; then
+    echo "🐳 Creating frontend Dockerfile..."
+    cp "$tpl_dir/Dockerfile.frontend.base" "$PROJECT_ROOT/src/frontend/Dockerfile"
+  fi
+
+  if [ ! -f "$PROJECT_ROOT/src/backend/Dockerfile" ] && [ -f "$tpl_dir/Dockerfile.backend.base" ]; then
+    echo "🐳 Creating backend Dockerfile..."
+    cp "$tpl_dir/Dockerfile.backend.base" "$PROJECT_ROOT/src/backend/Dockerfile"
+  fi
   # 3. Environment Variables (.env)
   if [ ! -f "$PROJECT_ROOT/.env" ]; then
     echo "🔐 Creating .env file..."

@@ -1,0 +1,29 @@
+# --- STAGE 1: Production Base ---
+FROM node:20-slim AS prod
+
+WORKDIR /app
+# (In a real app, you would npm install and build here)
+CMD ["npm", "start"]
+
+# --- STAGE 2: Development / Neovim Environment ---
+FROM prod AS dev
+
+# Accept build arguments from docker-compose.dev.yml
+ARG NEOVIM_VERSION=stable
+ARG LAZYGIT_VERSION=stable
+
+# Install required system dependencies for Neovim and development
+RUN apt-get update && apt-get install -y \
+  curl \
+  git \
+  build-essential \
+  && rm -rf /var/lib/apt/lists/*
+
+# (The 'node' user is already created automatically by the node:20-slim image)
+# (Future Neovim/Lazygit installation scripts will go here)
+
+# Switch to the built-in non-root user
+USER node
+
+# Keep the container alive for live-reloading / development
+CMD ["sleep", "infinity"]
