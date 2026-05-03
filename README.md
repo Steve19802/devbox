@@ -84,7 +84,7 @@ To achieve perfect "Dev vs. Prod Parity" while maintaining a great developer exp
 ## 🛠️ CLI Command Reference
 
 * **`devbox-init`**: Scaffolds the base project structure, Docker files, and `.env` securely.
-* **`devbox-toolchain [tool]`**: Compiles the base AI configuration with project-specific overrides.
+* **`devbox-ai-setup [tool]`**: Compiles the base AI configuration with project-specific overrides.
 * **`devbox-build [args]`**: Builds the Docker containers across all 3 layers. Accepts raw Compose flags.
 * **`devbox-up [args]`**: Starts the environment. Accepts flags (e.g., `--remove-orphans`).
 * **`devbox-down [args]`**: Gracefully stops the environment and handles AI network attachments safely.
