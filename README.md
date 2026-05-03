@@ -4,14 +4,15 @@ Welcome to the **DevBox Platform**. This directory (`build/`) contains the immut
 
 ## 🌟 Core Philosophy
 
-This platform was engineered using enterprise-grade platform principles, heavily inspired by the Android Open Source Project (AOSP):
+This platform was engineered using enterprise-grade platform principles:
 
 1. **Zero Host Dependencies:** You only need Docker installed on your machine. No Python virtual environments, no Node version managers, no local databases polluting your host OS.
 2. **Strict Separation of Concerns:**
-   - `build/` = Immutable Infrastructure & Standard AI Tools.
+   - `build/` = Immutable Infrastructure, Template Engine, & Standard AI Tools.
    - `src/` = Business Logic & Application Code.
    - `ai/` = Mutable, Project-Specific AI Overrides.
-3. **AI-Native, Secure by Default:** AI agents (like OpenCode or Cursor) are granted orchestration powers via a sandboxed Model Context Protocol (MCP) server that dynamically discovers project containers without exposing your host machine.
+3. **AI-Native & Secure:** AI agents are granted orchestration powers via a sandboxed Model Context Protocol (MCP) server that dynamically discovers project containers.
+4. **Dev vs. Prod Parity:** We use Multi-Stage Dockerfiles to ensure that your production image is tiny and secure, while your local development container is packed with hot-reloading and IDE tools.
 
 ---
 
@@ -22,21 +23,20 @@ my-app/ (Project Root)
 │
 ├── .env                      <-- Auto-generated: Host UID/GID & Tool versions
 ├── docker-compose.yml        <-- LAYER 1: Production Base (Pure App)
-├── docker-compose.dev.yml    <-- LAYER 2: Dev Overrides (Volume Mounts, Neovim)
-├── .gitignore                <-- Ignores compiled AI configs (e.g., .opencode/)
+├── docker-compose.dev.yml    <-- LAYER 2: Dev Overrides (Volume Mounts)
+├── ARCHITECTURE.md           <-- Auto-generated documentation for the app developers
 │
 ├── build/                    <-- 🏗️ INFRASTRUCTURE (You are here)
-│   ├── envsetup.sh           <-- The CLI compiler & router
+│   ├── envsetup.sh           <-- The CLI router & autocompletion engine
 │   ├── docker-compose.mcp.yml<-- LAYER 3: Platform Infra (DevBox MCP)
 │   ├── devbox-mcp/           <-- The Python MCP Docker Gateway
+│   ├── scripts/              <-- Standalone Python compilation scripts
+│   ├── templates/            <-- Base Dockerfiles, Compose files, and injections
 │   └── ai/                   <-- The "Standard Library" of AI tools
 │
-├── ai/                       <-- 🧠 PROJECT AI (Mutable overrides)
-│   └── opencode/             <-- Project-specific AI settings
-│
 └── src/                      <-- 💻 BUSINESS LOGIC
-    ├── frontend/             
-    └── backend/              
+    ├── frontend/             <-- Multi-stage Dockerfile
+    └── backend/              <-- Multi-stage Dockerfile
 ```
 
 ---
@@ -49,73 +49,71 @@ If you are cloning this repository as a fresh template, run the following comman
 ```bash
 source build/envsetup.sh
 ```
-*This loads the `devbox-*` CLI suite into your active terminal.*
+*This loads the `devbox-*` CLI suite into your active terminal and enables **Tab Autocompletion** for services and tools.*
 
 ### 2. Scaffold the Project
 ```bash
 devbox-init
 ```
-*This safely generates the `src/` folders, the `.env` file (mapping your host UID/GID to prevent permission errors), and the base Docker Compose files.*
+*This triggers the Template Engine. It securely maps your host UID/GID to prevent Linux permission errors, generates the base Multi-Stage Dockerfiles, and will interactively ask if you want to inject the Containerized IDE (Neovim/Lazygit) into your images.*
 
 ### 3. Compile your AI Toolchain
 ```bash
-devbox-toolchain
+devbox-ai-setup
 ```
-*You will be prompted to select your preferred toolchain (e.g., OpenCode, Cursor, or None). This compiles the AI infrastructure.*
+*You will be prompted to select your preferred toolchain (e.g., OpenCode, Cursor). This triggers `build/scripts/compile_ai.py` to merge base and project-specific AI settings.*
 
 ### 4. Boot the Environment
 ```bash
 devbox-up
 ```
-*This spins up your frontend, backend, and the background MCP supervisor by merging the 3-layer architecture.*
 
 ---
 
-## 🐳 The 3-Layer Docker Architecture
+## 💻 The Containerized IDE Injection
 
-To achieve perfect "Dev vs. Prod Parity" while maintaining a great developer experience, this project uses Docker Compose's native multi-file overrides. When you run `devbox-up`, the CLI stacks three files together in memory:
+By default, the `devbox-init` script generates lightweight, multi-stage Dockerfiles. However, during initialization, it will ask if you want to inject the Containerized Terminal IDE.
 
-1. **`docker-compose.yml` (Production Base):** Lives in the project root. Defines pure services, ports, and build targets. It contains zero local volume mounts or developer tools.
-2. **`docker-compose.dev.yml` (Dev Overrides):** Lives in the project root. Modifies the base file to target the `dev` build stage, injects local `./src` volume mounts for hot-reloading, and attaches Neovim state mappings.
-3. **`build/docker-compose.mcp.yml` (Platform Infra):** Hidden in the build repo. Atomically injects the AI MCP supervisor into the Docker network without polluting the project root.
+If you choose **Yes**:
+* The template engine safely injects `Neovim`, `Lazygit`, and `LSP dependencies` into the `dev` stage of your Dockerfiles via the `@DEVBOX_IDE_INJECTION_POINT@` marker.
+* It strictly maintains the non-root user context (`node` or `devuser`) so you never have file permission conflicts on your host machine.
+* To launch the IDE inside a running container, simply type: `devbox-edit <service_name>` (e.g., `devbox-edit backend`).
+
+If you choose **No**:
+* The containers remain hyper-lightweight, perfectly optimized for connecting via VS Code DevContainers or JetBrains Gateway.
 
 ---
 
 ## 🛠️ CLI Command Reference
 
-* **`devbox-init`**: Scaffolds the base project structure, Docker files, and `.env` securely.
-* **`devbox-ai-setup [tool]`**: Compiles the base AI configuration with project-specific overrides.
-* **`devbox-build [args]`**: Builds the Docker containers across all 3 layers. Accepts raw Compose flags.
-* **`devbox-up [args]`**: Starts the environment. Accepts flags (e.g., `--remove-orphans`).
-* **`devbox-down [args]`**: Gracefully stops the environment and handles AI network attachments safely.
+*(Tip: Press `TAB` after typing these commands to auto-complete service names!)*
+
+* **`devbox-init`**: Scaffolds the base project structure using the template engine.
+* **`devbox-ai-setup`**: Compiles the AI configuration.
+* **`devbox-build [args]`**: Builds the Docker containers across all 3 layers. 
+* **`devbox-up [args]`**: Starts the environment.
+* **`devbox-down [args]`**: Gracefully stops the environment.
+* **`devbox-logs [service]`**: Tails logs for a specific service (or all services).
 * **`devbox-run <service> <command>`**: Executes a command inside a specific running container.
-    * *Example: `devbox-run backend pytest`*
-* **`devbox-edit <service>`**: Attaches a containerized IDE (Neovim) to the target service.
+* **`devbox-edit <service>`**: Attaches the containerized IDE to the target service.
 
 ---
 
 ## 🤖 The AI Overlay System
 
-To support multiple AI IDEs and prevent project-specific configurations from breaking the core infrastructure, we use an **Overlay Pattern** during compilation.
-
-When you run `devbox-toolchain opencode`, a lightweight, ephemeral Python container performs the following:
-1. Copies the "Base" tools from `build/ai/opencode/` (Agents, Skills).
-2. Copies the "Project" tools from `ai/opencode/`, overwriting base tools if there is a naming conflict.
-3. Performs a deep JSON merge on `opencode.json` (combining the Base MCP Gateway with Project-Specific MCPs).
-4. Outputs the final, compiled configuration to a hidden `.opencode/` directory at the project root.
-
-**Adding Project-Specific Tools:** Do not edit `build/ai/`. Instead, place your custom agents or JSON configurations in `<project-root>/ai/<tool>/`. They will be merged automatically next time you run the toolchain command.
+To support multiple AI IDEs, we use an **Overlay Pattern**. When you run `devbox-ai-setup`, an ephemeral Python container runs `build/scripts/compile_ai.py` to:
+1. Copy the "Base" tools from `build/ai/`
+2. Copy the "Project" tools from `ai/`, overwriting base tools.
+3. Perform a deep JSON merge on configuration files.
 
 ---
 
 ## 🛡️ The DevBox MCP (Docker Gateway)
 
-The crown jewel of this architecture is the **DevBox Supervisor** (`build/devbox-mcp`). 
-
-Instead of allowing the AI to run blind bash commands on your host machine (which is a massive security risk), the AI connects to an isolated Python container running an HTTP Server-Sent Events (SSE) server on Docker's internal network.
+The AI connects to an isolated Python container running an HTTP Server-Sent Events (SSE) server on Docker's internal network.
 
 **Capabilities & Security:**
-* **Self-Discovery:** The MCP reads the Docker socket, finds its own Compose stack (`com.docker.compose.project`), and dynamically feeds the AI a live list of sibling containers it is allowed to interact with.
-* **The Warden:** The AI cannot interact with containers outside of this project, nor can it execute commands inside the MCP container itself.
-* **Language Agnostic:** The MCP provides a single `execute_container_command` tool. The AI reads your project's Dockerfiles to determine how to run commands (e.g., it knows to use `. .venv/bin/activate && pip` for Python, or `npm` for Node).
-```
+* **Self-Discovery:** The MCP reads the Docker socket and dynamically feeds the AI a live list of sibling containers it is allowed to interact with.
+* **Collision-Proof:** The container dynamically resolves its own network name, meaning you can run multiple DevBox projects on the same host machine simultaneously without conflicts.
+* **The Warden:** The AI cannot interact with containers outside of this project, nor can it execute commands inside the MCP container itself or on your host OS.
+
