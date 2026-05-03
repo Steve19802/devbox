@@ -19,8 +19,10 @@ RUN apt-get update && apt-get install -y \
   build-essential \
   && rm -rf /var/lib/apt/lists/*
 
-# Create the devuser that your compose file expects
-RUN useradd -m -s /bin/bash devuser
+# Create user AND pre-create docker volume mount points to prevent root ownership
+RUN useradd -m -s /bin/bash devuser && \
+  mkdir -p /home/devuser/.config /home/devuser/.local/share /home/devuser/.local/state && \
+  chown -R devuser:devuser /home/devuser/.config /home/devuser/.local
 
 # (Future Neovim/Lazygit installation scripts will go here)
 

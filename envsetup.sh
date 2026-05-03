@@ -141,6 +141,13 @@ function devbox-init() {
   mkdir -p "$PROJECT_ROOT/src/backend"
   mkdir -p "$PROJECT_ROOT/ai"
 
+  # (Creating these prevents Docker from creating them as 'root' during mount)
+  mkdir -p "$PROJECT_ROOT/src/frontend/.nvim/share/nvim"
+  mkdir -p "$PROJECT_ROOT/src/frontend/.nvim/state/nvim"
+
+  mkdir -p "$PROJECT_ROOT/src/backend/.nvim/share/nvim"
+  mkdir -p "$PROJECT_ROOT/src/backend/.nvim/state/nvim"
+
   # 2. Copy base Templates
   local tpl_dir="$PROJECT_ROOT/build/templates"
 
