@@ -29,3 +29,11 @@ This platform is tech-agnostic. The specific containers, languages, and framewor
 ## 5. File System Edits
 * When editing code, use your standard file-writing capabilities on the host paths (e.g., `src/...`). The Docker volume mounts will instantly sync these changes into the running containers. You do not need to execute bash commands to edit files.
 
+## 6. Third-Party Skill Execution (The "Script Bridge" Rule)
+When utilizing external skills (e.g., from Anthropic or other vendors), those skills may instruct you to run local scripts like `bash scripts/setup.sh`. 
+
+Because you are executing commands inside isolated Docker containers via MCP, the container does not have access to the skill's source folder. Whenever a skill asks you to run a script, you MUST perform this "Script Bridge" maneuver:
+
+1. **Locate the Script:** Find the script on the host file system. It will typically be inside `.opencode/skills/<skill_name>/scripts/`.
+2. **Bridge to the Container:** Use your file system tools to copy that `scripts/` directory into the target service's source code directory (e.g., copy it to `src/frontend/scripts/`).
+3. **Execute via MCP:** Now that the script is mapped into the container's volume, execute it using the MCP Gateway targeting the correct container (e.g., run `bash /app/scripts/setup.sh` inside the `frontend` container).
