@@ -6,6 +6,10 @@ PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # Define the 3-layer compose files as a single variable for easy reuse
 DEVBOX_COMPOSE_ARGS="-f $PROJECT_ROOT/docker-compose.yml -f $PROJECT_ROOT/docker-compose.dev.yml -f $PROJECT_ROOT/build/docker-compose.mcp.yml"
 
+# Dynamically fetch the host's actual UID/GID to prevent permission issues
+LOCAL_UID=$(id -u 2>/dev/null || echo 1000)
+LOCAL_GID=$(id -g 2>/dev/null || echo 1000)
+
 function devbox-ai-setup() {
   local target_tool=$1
 
@@ -48,6 +52,7 @@ function devbox-ai-setup() {
 
   # 5. Run the generic Python compiler using Environment Variables
   docker run --rm \
+    -u $LOCAL_UID:$LOCAL_GID \
     -v "$PROJECT_ROOT:/workspace" \
     -w /workspace \
     -e BASE_DIR="$base_dir" \
@@ -117,7 +122,7 @@ function devbox-run() {
   fi
 
   echo "🚀 Running '$*' in '$service'..."
-  docker compose $DEVBOX_COMPOSE_ARGS exec "$service" sh -c "$*"
+  docker compose $DEVBOX_COMPOSE_ARGS exec "$service" "$@"
 }
 
 function devbox-edit() {
@@ -209,8 +214,8 @@ function devbox-init() {
     echo "🔐 Creating .env file..."
 
     # Dynamically fetch the host's actual UID/GID to prevent permission issues
-    LOCAL_UID=$(id -u 2>/dev/null || echo 1000)
-    LOCAL_GID=$(id -g 2>/dev/null || echo 1000)
+    #LOCAL_UID=$(id -u 2>/dev/null || echo 1000)
+    #LOCAL_GID=$(id -g 2>/dev/null || echo 1000)
 
     # Notice we don't use quotes around EOF here so bash CAN evaluate the UID/GID variables
     cat <<EOF >"$PROJECT_ROOT/.env"
