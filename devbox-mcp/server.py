@@ -10,7 +10,7 @@ from mcp.server.sse import SseServerTransport
 def get_container_mapping() -> dict[str, str]:
     """
     Returns a mapping of { 'compose_service_name': 'actual_docker_container_name' }
-    e.g., {'frontend': 'my-new-project-frontend-1', 'backend': 'my-new-project-backend-1'}
+    e.g., {'api': 'my-project-api-1', 'worker': 'my-project-worker-1'}
     """
     try:
         # 1. Get our own ID

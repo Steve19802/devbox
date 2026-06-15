@@ -1,0 +1,28 @@
+{
+  "runtimes": {
+    "node": {
+      "name": "Node.js",
+      "base_image": "node:24-alpine",
+      "dev_user": "node",
+      "home_dir": "/home/node",
+      "dockerfile": "node.Dockerfile",
+      "default_port": 5173
+    },
+    "node-debian": {
+      "name": "Node.js (Debian)",
+      "base_image": "node:20-slim",
+      "dev_user": "node",
+      "home_dir": "/home/node",
+      "dockerfile": "node.Dockerfile.debian",
+      "default_port": 5173
+    },
+    "python": {
+      "name": "Python",
+      "base_image": "python:3.11-slim",
+      "dev_user": "devuser",
+      "home_dir": "/home/devuser",
+      "dockerfile": "python.Dockerfile",
+      "default_port": 8000
+    }
+  }
+}

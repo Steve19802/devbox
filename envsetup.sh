@@ -10,57 +10,28 @@ DEVBOX_COMPOSE_ARGS="-f $PROJECT_ROOT/docker-compose.yml -f $PROJECT_ROOT/docker
 LOCAL_UID=$(id -u 2>/dev/null || echo 1000)
 LOCAL_GID=$(id -g 2>/dev/null || echo 1000)
 
-function devbox-ai-setup() {
-  local target_tool=$1
-
-  # 1. Dynamically discover available AI tools based on folders in build/ai/
-  local available_tools=($(ls -1 "$PROJECT_ROOT/build/ai/" 2>/dev/null))
-
-  # Append "none" as a valid option to opt-out
-  available_tools+=("none")
-
-  # 2. Interactive Menu (if no argument is provided)
-  if [ -z "$target_tool" ]; then
-    echo "🤖 DevBox AI Toolchain - Select your IDE/Agent:"
-    select opt in "${available_tools[@]}"; do
-      if [ -n "$opt" ]; then
-        target_tool=$opt
-        break
-      else
-        echo "❌ Invalid selection."
-      fi
-    done
+# Internal helper: runs a Python script from build/scripts/ inside a Docker container
+function _devbox_run_python() {
+  local script=$1
+  shift
+  # Smart TTY detection: use -it when user is interactive, -i for CI/pipes
+  local tty_flag="-i"
+  if [ -t 0 ]; then
+    tty_flag="-it"
   fi
-
-  # 3. Graceful Exit for "none"
-  if [ "$target_tool" == "none" ]; then
-    echo "✅ AI toolchain compilation skipped. You are managing your own configuration."
-    return 0
-  fi
-
-  # 4. Validate the selection
-  if [ ! -d "$PROJECT_ROOT/build/ai/$target_tool" ]; then
-    echo "❌ Unknown AI tool: $target_tool"
-    return 1
-  fi
-
-  echo "🔧 Compiling AI Workspace for: $target_tool"
-
-  local base_dir="build/ai/$target_tool"
-  local proj_dir="ai/$target_tool"
-  local out_dir=".$target_tool"
-
-  # 5. Run the generic Python compiler using Environment Variables
-  docker run --rm \
-    -u $LOCAL_UID:$LOCAL_GID \
+  docker run --rm $tty_flag \
+    -u "$LOCAL_UID:$LOCAL_GID" \
     -v "$PROJECT_ROOT:/workspace" \
     -w /workspace \
-    -e BASE_DIR="$base_dir" \
-    -e PROJ_DIR="$proj_dir" \
-    -e OUT_DIR="$out_dir" \
-    python:3.11-slim python /workspace/build/scripts/compile_ai.py
+    -e LOCAL_UID="$LOCAL_UID" \
+    -e LOCAL_GID="$LOCAL_GID" \
+    python:3.11-slim \
+    python "/workspace/build/scripts/$script" "$@"
+}
 
-  echo "✅ Activated $target_tool! You can now launch your IDE."
+function devbox-ai-setup() {
+  echo "🤖 Configuring AI toolchain..."
+  _devbox_run_python ai_setup.py "$@"
 }
 # --- Docker Compose Helpers (V2) ---
 
@@ -140,102 +111,23 @@ function devbox-edit() {
 
 function devbox-init() {
   echo "🏗️ Scaffolding new DevBox project..."
+  _devbox_run_python scaffold.py /workspace "$@"
+}
 
-  # 1. Base Structure
-  mkdir -p "$PROJECT_ROOT/src/frontend"
-  mkdir -p "$PROJECT_ROOT/src/backend"
-  mkdir -p "$PROJECT_ROOT/ai"
+function devbox-add-service() {
+  echo "➕ Adding new service..."
+  _devbox_run_python manage_service.py add "$@"
+}
 
-  # (Creating these prevents Docker from creating them as 'root' during mount)
-  mkdir -p "$PROJECT_ROOT/src/frontend/.nvim/share/nvim"
-  mkdir -p "$PROJECT_ROOT/src/frontend/.nvim/state/nvim"
-
-  mkdir -p "$PROJECT_ROOT/src/backend/.nvim/share/nvim"
-  mkdir -p "$PROJECT_ROOT/src/backend/.nvim/state/nvim"
-
-  # 2. Copy base Templates
-  local tpl_dir="$PROJECT_ROOT/build/templates"
-
-  if [ ! -f "$PROJECT_ROOT/.gitignore" ] && [ -f "$tpl_dir/gitignore.base" ]; then
-    echo "📄 Creating .gitignore..."
-    cp "$tpl_dir/gitignore.base" "$PROJECT_ROOT/.gitignore"
-  fi
-
-  if [ ! -f "$PROJECT_ROOT/docker-compose.yml" ] && [ -f "$tpl_dir/docker-compose.base.yml" ]; then
-    echo "🐳 Creating base docker-compose.yml..."
-    cp "$tpl_dir/docker-compose.base.yml" "$PROJECT_ROOT/docker-compose.yml"
-  fi
-
-  if [ ! -f "$PROJECT_ROOT/docker-compose.dev.yml" ] && [ -f "$tpl_dir/docker-compose.dev.base.yml" ]; then
-    echo "🛠️ Creating docker-compose.dev.yml..."
-    cp "$tpl_dir/docker-compose.dev.base.yml" "$PROJECT_ROOT/docker-compose.dev.yml"
-  fi
-
-  if [ ! -f "$PROJECT_ROOT/ARCHITECTURE.md" ] && [ -f "$tpl_dir/ARCHITECTURE.base.md" ]; then
-    echo "📝 Creating ARCHITECTURE.md..."
-    cp "$tpl_dir/ARCHITECTURE.base.md" "$PROJECT_ROOT/ARCHITECTURE.md"
-  fi
-
-  if [ ! -f "$PROJECT_ROOT/src/frontend/Dockerfile" ] && [ -f "$tpl_dir/Dockerfile.frontend.base" ]; then
-    echo "🐳 Creating frontend Dockerfile..."
-    cp "$tpl_dir/Dockerfile.frontend.base" "$PROJECT_ROOT/src/frontend/Dockerfile"
-  fi
-
-  if [ ! -f "$PROJECT_ROOT/src/backend/Dockerfile" ] && [ -f "$tpl_dir/Dockerfile.backend.base" ]; then
-    echo "🐳 Creating backend Dockerfile..."
-    cp "$tpl_dir/Dockerfile.backend.base" "$PROJECT_ROOT/src/backend/Dockerfile"
-  fi
-
-  if [ ! -f "$PROJECT_ROOT/src/backend/requirements.txt" ]; then
-    echo "🐳 Creating backend requirements.txt..."
-    touch "$PROJECT_ROOT/src/backend/requirements.txt"
-  fi
-
-  # --- Optional IDE Injection ---
-  echo ""
-  read -p "🤔 Do you want to inject the Containerized Terminal IDE (Neovim/Lazygit)? [y/N] " inject_ide
-  if [[ "$inject_ide" =~ ^[Yy]$ ]]; then
-    echo "💉 Injecting Neovim & Lazygit into Dockerfiles..."
-
-    # Robust Injection: Read the injection file, append it after the marker, then delete the marker.
-
-    # Inject into Frontend
-    sed -i -e '/# @DEVBOX_IDE_INJECTION_POINT@/r '"$tpl_dir/ide_injection.dockerfile" -e '/# @DEVBOX_IDE_INJECTION_POINT@/d' "$PROJECT_ROOT/src/frontend/Dockerfile"
-
-    # Inject into Backend
-    sed -i -e '/# @DEVBOX_IDE_INJECTION_POINT@/r '"$tpl_dir/ide_injection.dockerfile" -e '/# @DEVBOX_IDE_INJECTION_POINT@/d' "$PROJECT_ROOT/src/backend/Dockerfile"
-
-    echo "✅ IDE successfully injected!"
+function devbox-remove-service() {
+  local service_name=$1
+  if [ -z "$service_name" ]; then
+    echo "➖ Removing service..."
+    _devbox_run_python manage_service.py remove
   else
-    echo "⏩ Skipping IDE injection. (Containers will remain lightweight for VS Code/JetBrains)."
-    # Clean up the unused markers from the generated files
-    sed -i '/# @DEVBOX_IDE_INJECTION_POINT@/d' "$PROJECT_ROOT/src/frontend/Dockerfile"
-    sed -i '/# @DEVBOX_IDE_INJECTION_POINT@/d' "$PROJECT_ROOT/src/backend/Dockerfile"
+    echo "➖ Removing service '$service_name'..."
+    _devbox_run_python manage_service.py remove "$service_name"
   fi
-  # -----------------------------------
-
-  # 3. Environment Variables (.env)
-  if [ ! -f "$PROJECT_ROOT/.env" ]; then
-    echo "🔐 Creating .env file..."
-
-    # Dynamically fetch the host's actual UID/GID to prevent permission issues
-    #LOCAL_UID=$(id -u 2>/dev/null || echo 1000)
-    #LOCAL_GID=$(id -g 2>/dev/null || echo 1000)
-
-    # Notice we don't use quotes around EOF here so bash CAN evaluate the UID/GID variables
-    cat <<EOF >"$PROJECT_ROOT/.env"
-UID=${LOCAL_UID}
-GID=${LOCAL_GID}
-
-# Can be 'stable', 'nightly', or a specific tag like 'v0.10.0'
-# it's recommended to match with the host version
-NEOVIM_VERSION=v0.11.6
-LAZYGIT_VERSION=0.60.0
-EOF
-  fi
-
-  echo "✅ Project scaffolded successfully!"
-  echo "Run 'devbox-toolchain' to set up your AI environment."
 }
 
 # ==========================================
@@ -264,7 +156,7 @@ _devbox_ai_completions() {
 }
 
 # Bind the completion functions to your specific CLI commands
-complete -F _devbox_service_completions devbox-logs devbox-run devbox-edit
+complete -F _devbox_service_completions devbox-logs devbox-run devbox-edit devbox-remove-service
 complete -F _devbox_ai_completions devbox-ai-setup
 
 echo "✅ DevBox Environment Loaded!"

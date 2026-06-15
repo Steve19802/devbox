@@ -15,10 +15,10 @@ To successfully assist the developer, you MUST strictly adhere to the following 
     ├── ai/                       <-- 🧠 Project-specific AI overrides (agents/MCPs)
     ├── build/                    <-- ⚙️ Immutable DevBox Infrastructure (READ-ONLY)
     ├── src/                      <-- 💻 Application Code
-    │   ├── [CONTAINER_NAME_1]    <-- App services 1 (e.g., frontend: React, Vue, etc)
-    │   ├── [CONTAINER_NAME_2]    <-- App services 2 (e.g., backend: Python, Node, Go, etc)│
+    │   ├── [CONTAINER_NAME_1]    <-- App service 1
+    │   ├── [CONTAINER_NAME_2]    <-- App service 2
     │   ├── ...
-    │   └── [CONTAINER_NAME_n]    <-- App services n (e.g., database: postgress, mongoDB, etc)│
+    │   └── [CONTAINER_NAME_n]    <-- App service n
     ├── docker-compose.yml        <-- 🚀 Production Base (Pure app services, no dev tools)
     └── docker-compose.dev.yml    <-- 🛠️ Local Dev Overrides (Volume mounts, hot-reloading)
 
@@ -34,15 +34,15 @@ Please edit `docker-compose.dev.yml` for local testing, and only modify `docker-
 ## Execution Rules (The MCP Gateway)
 * **NEVER** attempt to run bash commands directly on the local host system. You do not have host access.
 * **ALWAYS** use the MCP tools provided by the `devbox-mcp` server to execute commands on target container.
-* **Targeting Containers:** The MCP `execute_container_command` tool uses "Smart Routing." You do not need to look up complex Docker IDs or query a list. Simply pass the generic service name (e.g., `frontend` or `backend`) as the `container` parameter, and the MCP Gateway will automatically route it to the correct running instance.
-* **Long-Running Processes**: Do not start dev servers (e.g., `npm run dev`) via the MCP execution tool, as it will timeout. If a server needs to be started, instruct the user to run it in their own host terminal (e.g., `devbox-run frontend "npm run dev"`)
+* **Targeting Containers:** The MCP `execute_container_command` tool uses "Smart Routing." You do not need to look up complex Docker IDs or query a list. Simply pass the generic service name (e.g., `api` or `worker`) as the `container` parameter, and the MCP Gateway will automatically route it to the correct running instance.
+* **Long-Running Processes**: Do not start dev servers (e.g., `npm run dev`) via the MCP execution tool, as it will timeout. If a server needs to be started, instruct the user to run it in their own host terminal (e.g., `devbox-run api "npm run dev"`)
 
 ## The 3-Way Path Mapping (CRITICAL)
 You are running in an isolated AI container. When you use the MCP Gateway, you are executing commands in a *different* container. You must translate paths between these two worlds:
 
-* **Your View (File Editing):** You access files relative to your current working directory (the project root). Example: `src/frontend/App.tsx`.
+* **Your View (File Editing):** You access files relative to your current working directory (the project root). Example: `src/api/app.ts`.
 * **The Target Container View (MCP Execution):** The target containers mount their specific source folder directly to `/app/`.
-* **The Translation Rule:** When you run a command via MCP in the `frontend` container, it executes inside `/app/`. If that command creates a file at `/app/new-file.txt`, you must use your file tools to edit it at `src/frontend/new-file.txt`.
+* **The Translation Rule:** When you run a command via MCP in any container, it executes inside `/app/`. If that command creates a file at `/app/new-file.txt`, you must use your file tools to edit it at `src/[CONTAINER_NAME]/new-file.txt`.
 
 ## Container Path Mapping (CRITICAL - Read Carefully)
 
@@ -50,15 +50,11 @@ You (the AI Agent) run in an isolated container with the project root mapped in.
 There are THREE path perspectives you must understand:
 
 ### 1. Your Container (AI Agent) - Where you read/write files
-- **Project root path (`PROJECT_ROOT`)**: This is the path where you where started. It follows this rule: `BOX/[HOST_NAME]/[PROJECT_NAME]`. Example: `/BOX/P14SNTBK/my-new-project/`
-- **Containers path**: This is the path to the code and files of the containers. It follows this rule: `[PROJECT_ROOT]/src/[CONTAINER_NAME]`. For example, in case of two containers named `frontend` and `backend`, you will have these paths:
-  - Frontend code: `/BOX/P14SNTBK/my-new-project/src/frontend/`
-  - Backend code: `/BOX/P14SNTBK/my-new-project/src/backend/`
+- **Project root path (`PROJECT_ROOT`)**: This is the path where you were started. It follows this rule: `BOX/[HOST_NAME]/[PROJECT_NAME]`. Example: `/BOX/P14SNTBK/my-new-project/`
+- **Containers path**: This is the path to the code and files of the containers. It follows this rule: `[PROJECT_ROOT]/src/[CONTAINER_NAME]`.
 
 ### 2. Target Containers - Where MCP commands execute
-- ** Container working path**: Unless otherwise specified, the base path for containers is `/app/`. For example, in case of two containers named `frontend` and `backend`, you will have the following mappings:
-  - Frontend container working dir: `/app/` ← maps to `[PROJECT_ROOT]/src/frontend/` on your filesystem
-  - Backend container working dir: `/app/` ← maps to `[PROJECT_ROOT]/src/backend/` on your filesystemm
+- **Container working path**: Unless otherwise specified, the base path for containers is `/app/`. Each container maps `[PROJECT_ROOT]/src/[CONTAINER_NAME]/` to `/app/`.
 
 ### 3. Path Translation Rule
 When you execute a command via MCP that creates files at `/app/foo` in the `[CONTAINER_NAME]` container,
@@ -66,16 +62,16 @@ those files will appear at `[PROJECT_ROOT]/src/[CONTAINER_NAME]/foo` from your p
 
 **Example:**
 ```bash
-# You run this via MCP in frontend container:
-devbox-mcp_execute_container_command(container="frontend", command="mkdir /app/test")
+# You run this via MCP in the api container:
+devbox-mcp_execute_container_command(container="api", command="mkdir /app/test")
 # You then access it at:
-read(filePath="/BOX/P14SNTBK/my-new-project/src/frontend/test")
+read(filePath="/BOX/P14SNTBK/my-new-project/src/api/test")
 ```
 
 ### 4. Verification Step (Do this once per session)
 Read `docker-compose.dev.yml` to confirm exact volume mappings:
 ```bash
-read(filePath="/BOX/P14SNTBK/my-new-project/docker-compose.yml")
+read(filePath="/BOX/P14SNTBK/my-new-project/docker-compose.dev.yml")
 ```
 
 ## Quick path reference
@@ -105,7 +101,7 @@ When utilizing external skills (e.g., from Anthropic), those skills may instruct
 Because you are executing commands via MCP, you must run those scripts inside the target container. All compiled skills and their scripts are automatically volume-mounted into every container at `/var/devbox/skills/`.
 
 When a skill asks you to run a script, simply execute it directly from the mount. 
-For example, if the `web-artifacts-builder` skill wants to run `init-artifact.sh`, you MUST use the MCP Gateway to execute this command inside the `frontend` container:
+For example, if the `web-artifacts-builder` skill wants to run `init-artifact.sh`, you MUST use the MCP Gateway to execute this command inside the appropriate container:
 `bash /var/devbox/skills/web-artifacts-builder/scripts/init-artifact.sh <project-name>`
 
 ## System Dependencies & Privilege Escalation

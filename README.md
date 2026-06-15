@@ -30,13 +30,14 @@ my-app/ (Project Root)
 │   ├── envsetup.sh           <-- The CLI router & autocompletion engine
 │   ├── docker-compose.mcp.yml<-- LAYER 3: Platform Infra (DevBox MCP)
 │   ├── devbox-mcp/           <-- The Python MCP Docker Gateway
-│   ├── scripts/              <-- Standalone Python compilation scripts
-│   ├── templates/            <-- Base Dockerfiles, Compose files, and injections
+│   ├── scripts/              <-- Python CLI scripts (scaffold.py, ai_setup.py, compile_ai.py)
+│   ├── templates/            <── Template engine (manifest.json, dockerfiles/, compose/)
 │   └── ai/                   <-- The "Standard Library" of AI tools
 │
 └── src/                      <-- 💻 BUSINESS LOGIC
-    ├── frontend/             <-- Multi-stage Dockerfile
-    └── backend/              <-- Multi-stage Dockerfile
+    ├── <service_1>/          <-- Multi-stage Dockerfile
+    ├── <service_2>/          <-- Multi-stage Dockerfile
+    └── ...
 ```
 
 ---
@@ -55,7 +56,12 @@ source build/envsetup.sh
 ```bash
 devbox-init
 ```
-*This triggers the Template Engine. It securely maps your host UID/GID to prevent Linux permission errors, generates the base Multi-Stage Dockerfiles, and will interactively ask if you want to inject the Containerized IDE (Neovim/Lazygit) into your images.*
+*This triggers the Python scaffolding engine. It interactively asks how many services your project needs, their names, runtimes, and ports. It securely maps your host UID/GID to prevent Linux permission errors, generates multi-stage Dockerfiles, dynamic docker-compose files, and optionally injects the Containerized IDE (Neovim/Lazygit) into your images.*
+
+*You can also script it non-interactively:*
+```bash
+devbox-init --service api:node:3000 --service worker:python:8000 --inject-ide
+```
 
 ### 3. Compile your AI Toolchain
 ```bash
@@ -72,15 +78,16 @@ devbox-up
 
 ## 💻 The Containerized IDE Injection
 
-By default, the `devbox-init` script generates lightweight, multi-stage Dockerfiles. However, during initialization, it will ask if you want to inject the Containerized Terminal IDE.
+By default, the `devbox-init` script generates lightweight, multi-stage Dockerfiles. During initialization, it will ask if you want to inject the Containerized Terminal IDE.
 
-If you choose **Yes**:
-* The template engine safely injects `Neovim`, `Lazygit`, and `LSP dependencies` into the `dev` stage of your Dockerfiles via the `@DEVBOX_IDE_INJECTION_POINT@` marker.
-* It strictly maintains the non-root user context (`node` or `devuser`) so you never have file permission conflicts on your host machine.
-* To launch the IDE inside a running container, simply type: `devbox-edit <service_name>` (e.g., `devbox-edit backend`).
+If you choose **Yes** (or pass `--inject-ide`):
+* The scaffolding engine safely injects `Neovim`, `Lazygit`, and `LSP dependencies` into the `dev` stage of each service's Dockerfile via the `@DEVBOX_IDE_INJECTION_POINT@` marker.
+* It strictly maintains the non-root user context for each runtime so you never have file permission conflicts on your host machine.
+* To launch the IDE inside a running container, simply type: `devbox-edit <service_name>`.
 
 If you choose **No**:
 * The containers remain hyper-lightweight, perfectly optimized for connecting via VS Code DevContainers or JetBrains Gateway.
+* Neovim volumes and `.nvim/` directories are not created.
 
 ---
 
@@ -88,8 +95,8 @@ If you choose **No**:
 
 *(Tip: Press `TAB` after typing these commands to auto-complete service names!)*
 
-* **`devbox-init`**: Scaffolds the base project structure using the template engine.
-* **`devbox-ai-setup`**: Compiles the AI configuration.
+* **`devbox-init [--service name:runtime:port] [--inject-ide]`**: Scaffolds the project with interactive wizard or CLI flags.
+* **`devbox-ai-setup [tool_name]`**: Compiles the AI configuration (interactive or direct).
 * **`devbox-build [args]`**: Builds the Docker containers across all 3 layers. 
 * **`devbox-up [args]`**: Starts the environment.
 * **`devbox-down [args]`**: Gracefully stops the environment.
@@ -101,10 +108,11 @@ If you choose **No**:
 
 ## 🤖 The AI Overlay System
 
-To support multiple AI IDEs, we use an **Overlay Pattern**. When you run `devbox-ai-setup`, an ephemeral Python container runs `build/scripts/compile_ai.py` to:
-1. Copy the "Base" tools from `build/ai/`
-2. Copy the "Project" tools from `ai/`, overwriting base tools.
-3. Perform a deep JSON merge on configuration files.
+To support multiple AI IDEs, we use an **Overlay Pattern**. When you run `devbox-ai-setup`, an ephemeral Python container runs `build/scripts/ai_setup.py` (which imports `compile_ai.py`) to:
+1. Show an interactive menu of available AI tools (or accept a CLI argument).
+2. Copy the "Base" tools from `build/ai/`
+3. Copy the "Project" tools from `ai/`, overwriting base tools.
+4. Perform a deep JSON merge on configuration files.
 
 ---
 
