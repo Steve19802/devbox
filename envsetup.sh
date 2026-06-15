@@ -186,6 +186,11 @@ function devbox-init() {
     cp "$tpl_dir/Dockerfile.backend.base" "$PROJECT_ROOT/src/backend/Dockerfile"
   fi
 
+  if [ ! -f "$PROJECT_ROOT/src/backend/requirements.txt" ]; then
+    echo "🐳 Creating backend requirements.txt..."
+    touch "$PROJECT_ROOT/src/backend/requirements.txt"
+  fi
+
   # --- Optional IDE Injection ---
   echo ""
   read -p "🤔 Do you want to inject the Containerized Terminal IDE (Neovim/Lazygit)? [y/N] " inject_ide
