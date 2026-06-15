@@ -1,8 +1,9 @@
 services:
   devbox-mcp:
+    image: devbox-mcp-gateway:latest
     build:
       context: ./build/devbox-mcp
-    ports:
-      - "3000:3000"
+    #ports:
+    #  - "3000:3000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
