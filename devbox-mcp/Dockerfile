@@ -1,9 +1,11 @@
-FROM python:3.11-slim
+FROM docker:cli AS docker-cli
+
+FROM python:3.11-slim 
 
 WORKDIR /app
 
 # Install the Docker CLI (just the client, not the daemon)
-RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
