@@ -1,0 +1,44 @@
+# --- STAGE 1: Production Base ---
+FROM node:20-slim AS prod
+
+WORKDIR /app
+# (In a real app, you would npm install and build here)
+CMD ["npm", "start"]
+
+# --- STAGE 2: Development / Neovim Environment ---
+FROM prod AS dev
+
+# Accept build arguments from docker-compose.dev.yml
+ARG NEOVIM_VERSION=stable
+ARG LAZYGIT_VERSION=stable
+
+# Install required system dependencies for Neovim and development
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  curl \
+  git \
+  gcc \
+  g++ \
+  make \
+  sudo \
+  && rm -rf /var/lib/apt/lists/*
+
+#Pre-create docker volume mount points to prevent root ownership
+RUN mkdir -p /home/node/.config /home/node/.local/share /home/node/.local/state && \
+  chown -R node:node /home/node/.config /home/node/.local
+
+# Allow the 'node' user to execute any sudo command without a password
+RUN echo "node ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/nopasswd && \
+  chmod 0440 /etc/sudoers.d/nopasswd
+
+# Enable corepack to natively support pnpm and yarn out of the box
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# (The 'node' user is already created automatically by the node:20-slim image)
+# (Future Neovim/Lazygit installation scripts will go here)
+# @DEVBOX_IDE_INJECTION_POINT@
+
+# Switch to the built-in non-root user
+USER node
+
+# Keep the container alive for live-reloading / development
+CMD ["sleep", "infinity"]

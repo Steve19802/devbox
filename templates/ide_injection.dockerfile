@@ -12,6 +12,6 @@ RUN curl -LO "https://github.com/jesseduffield/lazygit/releases/download/v${LAZY
   rm lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz
 
 # Install common LSP dependencies (Ripgrep, fd, npm, python3-venv)
-RUN apt-get update && apt-get install -y ripgrep fd-find python3-venv npm && \
+RUN apt-get update && apt-get install -y ripgrep fd-find python3-venv && \
   ln -s $(which fdfind) /usr/local/bin/fd || true && \
   rm -rf /var/lib/apt/lists/*

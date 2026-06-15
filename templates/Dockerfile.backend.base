@@ -1,7 +1,24 @@
 # --- STAGE 1: Production Base ---
 FROM python:3.11-slim AS prod
 
+# 1. Create the non-root user immediately
+RUN useradd -m -s /bin/bash devuser
+
+# 2. Set working directory
 WORKDIR /app
+
+# 3. Add the local bin directory to the PATH
+ENV PATH="/home/devuser/.local/bin:${PATH}"
+
+# 4. Switch to non-root user BEFORE installing packages
+USER devuser
+
+# 5. Copy requirements and install them securely
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+WORKDIR /app
+
 # (In a real app, you would pip install and copy code here)
 CMD ["python", "-m", "http.server", "8000"]
 
@@ -12,6 +29,9 @@ FROM prod AS dev
 ARG NEOVIM_VERSION=stable
 ARG LAZYGIT_VERSION=stable
 
+# Switch back to root temporarily to install OS-level dev tools
+USER root
+
 # Install required system dependencies for Neovim and development
 RUN apt-get update && apt-get install -y \
   curl \
@@ -21,8 +41,7 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Create user AND pre-create docker volume mount points to prevent root ownership
-RUN useradd -m -s /bin/bash devuser && \
-  mkdir -p /home/devuser/.config /home/devuser/.local/share /home/devuser/.local/state && \
+RUN mkdir -p /home/devuser/.config /home/devuser/.local/share /home/devuser/.local/state && \
   chown -R devuser:devuser /home/devuser/.config /home/devuser/.local
 
 # Allow the 'devuser' user to execute any sudo command without a password
