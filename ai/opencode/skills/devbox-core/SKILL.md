@@ -82,7 +82,7 @@ Target Container: /app/
 
 ## Dynamic Container Discovery & Mapping
 This platform is tech-agnostic. The specific containers, languages, and frameworks depend entirely on the developer's project.
-* **To understand the project stack:** Read the `ARCHITECTURE.md` file and `docker-compose.yml` in the project root to learn what services exist.
+* **To understand the project stack:** Read the `ARCHITECTURE.md` file, `docker-compose.yml`, **and** `docker-compose.dev.yml` in the project root to learn what services exist. Services may be defined in either file (e.g., a `playwright` service in `docker-compose.dev.yml`).
 * **Source Code Mapping:** The host directory generally maps to the `/app` directory inside the respective containers (e.g., host `src/<service_name>/` usually maps to container `/app/`). Check the compose file volumes to verify.
 
 ## Network Discovery

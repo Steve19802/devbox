@@ -34,11 +34,20 @@ def parse_service_names(yaml_text):
 
 
 def get_existing_services(project_root):
-    path = os.path.join(project_root, "docker-compose.yml")
-    if not os.path.exists(path):
+    return get_services_from_file(os.path.join(project_root, "docker-compose.yml"))
+
+
+def get_services_from_file(filepath):
+    if not os.path.exists(filepath):
         return []
-    with open(path) as f:
+    with open(filepath) as f:
         return parse_service_names(f.read())
+
+
+def get_all_services(project_root):
+    yml = set(get_services_from_file(os.path.join(project_root, "docker-compose.yml")))
+    dev = set(get_services_from_file(os.path.join(project_root, "docker-compose.dev.yml")))
+    return yml | dev  # union, deduplicated
 
 
 def build_service_block_yaml(name, port):
@@ -139,6 +148,7 @@ def regenerate_architecture(project_root, service_names):
 
 def cmd_add(args, project_root, manifest):
     existing = get_existing_services(project_root)
+    all_services = get_all_services(project_root)
     runtimes = get_available_runtimes(manifest)
 
     name = args.get("--name") or ""
@@ -175,8 +185,8 @@ def cmd_add(args, project_root, manifest):
         )
         inject_ide = inject_input in ("y", "yes")
 
-    if name in existing:
-        print(f"Error: Service '{name}' already exists.")
+    if name in all_services:
+        print(f"Error: Service '{name}' already exists in docker-compose.yml or docker-compose.dev.yml.")
         sys.exit(1)
 
     if runtime_key not in manifest["runtimes"]:
@@ -216,26 +226,28 @@ def cmd_add(args, project_root, manifest):
 
 def cmd_remove(service_name, project_root):
     existing = get_existing_services(project_root)
+    all_services = get_all_services(project_root)
 
     if not service_name:
-        if not existing:
-            print("No services found in docker-compose.yml.")
+        if not all_services:
+            print("No services found in docker-compose.yml or docker-compose.dev.yml.")
             return
         print("Existing services:")
-        for i, s in enumerate(existing, 1):
-            print(f"  {i}. {s}")
+        for i, s in enumerate(sorted(all_services), 1):
+            src = "yml" if s in get_services_from_file(os.path.join(project_root, "docker-compose.yml")) else "dev.yml"
+            print(f"  {i}. {s} ({src})")
         while True:
             try:
                 choice = int(input("Select service to remove: "))
-                if 1 <= choice <= len(existing):
-                    service_name = existing[choice - 1]
+                if 1 <= choice <= len(all_services):
+                    service_name = sorted(all_services)[choice - 1]
                     break
             except ValueError:
                 pass
             print("Invalid selection.")
 
-    if service_name not in get_existing_services(project_root):
-        print(f"Error: Service '{service_name}' not found in docker-compose.yml.")
+    if service_name not in all_services:
+        print(f"Error: Service '{service_name}' not found in docker-compose.yml or docker-compose.dev.yml.")
         sys.exit(1)
 
     removed = remove_from_yaml(
@@ -270,13 +282,21 @@ def cmd_remove(service_name, project_root):
 
 
 def cmd_list(project_root):
-    services = get_existing_services(project_root)
-    if not services:
-        print("No services defined in docker-compose.yml.")
+    yml_services = set(get_services_from_file(os.path.join(project_root, "docker-compose.yml")))
+    dev_services = set(get_services_from_file(os.path.join(project_root, "docker-compose.dev.yml")))
+    all_services = yml_services | dev_services
+
+    if not all_services:
+        print("No services defined in docker-compose.yml or docker-compose.dev.yml.")
     else:
         print("Services:")
-        for s in services:
-            print(f"  - {s}")
+        for s in sorted(all_services):
+            labels = []
+            if s in yml_services:
+                labels.append("docker-compose.yml")
+            if s in dev_services:
+                labels.append("docker-compose.dev.yml")
+            print(f"  - {s} ({', '.join(labels)})")
 
 
 def main():

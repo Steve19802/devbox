@@ -78,8 +78,8 @@ function devbox-ai() {
 }
 
 function _get_services() {
-  # Dynamically reads the docker-compose.yml and returns the list of services (excluding our mcp infrastructure)
-  docker compose -f "$PROJECT_ROOT/docker-compose.yml" config --services 2>/dev/null | grep -v 'mcp'
+  # Dynamically reads all compose layers and returns the list of services (excluding our mcp infrastructure)
+  docker compose $DEVBOX_COMPOSE_ARGS config --services 2>/dev/null | grep -v 'mcp'
 }
 
 function devbox-run() {
