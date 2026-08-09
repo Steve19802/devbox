@@ -98,7 +98,7 @@ If you choose **No**:
 * **`devbox-init [--service name:runtime:port] [--inject-ide]`**: Scaffolds the project with interactive wizard or CLI flags.
 * **`devbox-ai-setup [tool_name]`**: Compiles the AI configuration (interactive or direct).
 * **`devbox-build [args]`**: Builds the Docker containers across all 3 layers. 
-* **`devbox-up [args]`**: Starts the environment.
+* **`devbox-up [args]`**: Starts the environment (attached by default; pass `-d` for detached mode).
 * **`devbox-down [args]`**: Gracefully stops the environment.
 * **`devbox-logs [service]`**: Tails logs for a specific service (or all services).
 * **`devbox-run <service> <command>`**: Executes a command inside a specific running container.

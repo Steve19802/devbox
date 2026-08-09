@@ -37,8 +37,8 @@ function devbox-ai-setup() {
 
 function devbox-up() {
   echo "🚀 Starting DevBox..."
-  # The "$@" allows you to pass flags like --remove-orphans or --force-recreate
-  docker compose $DEVBOX_COMPOSE_ARGS up -d "$@"
+  # The "$@" allows you to pass flags like --remove-orphans, --force-recreate, or -d
+  docker compose $DEVBOX_COMPOSE_ARGS up "$@"
 }
 
 function devbox-build() {
