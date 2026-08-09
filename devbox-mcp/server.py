@@ -97,6 +97,10 @@ async def handle_list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "The shell command to execute",
                     },
+                    "timeout": {
+                        "type": "number",
+                        "description": "Maximum execution time in seconds (default: 180)",
+                    },
                 },
                 "required": ["container", "command"],
             },
@@ -110,6 +114,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         if name == "execute_container_command":
             target_service = arguments["container"]
             command = arguments["command"]
+            timeout = arguments.get("timeout", 180.0)
             # Validate against the live list of containers
             mapping = get_container_mapping()
 
@@ -138,9 +143,9 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
                     stderr=asyncio.subprocess.PIPE,
                 )
 
-                # 2. Enforce a strict 180 secs server-side timeout
+                # 2. Enforce a configurable server-side timeout
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    process.communicate(), timeout=3 * 60.0
+                    process.communicate(), timeout=timeout
                 )
 
                 stdout = stdout_bytes.decode()
@@ -165,7 +170,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
             except asyncio.TimeoutError:
                 # 3. If it takes too long, cleanly kill the process before the AI panics
                 process.terminate()
-                error_msg = "Execution Timed Out (180s limit). Process was cleanly terminated by the MCP Gateway. DO NOT run long-hanging processes or dev servers via MCP."
+                error_msg = f"Execution Timed Out ({int(timeout)}s limit). Process was cleanly terminated by the MCP Gateway. DO NOT run long-hanging processes or dev servers via MCP."
 
                 print(f"❌ {error_msg}", flush=True)
                 print("-------------------------------------------\n", flush=True)

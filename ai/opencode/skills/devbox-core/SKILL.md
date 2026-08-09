@@ -35,7 +35,7 @@ Please edit `docker-compose.dev.yml` for local testing, and only modify `docker-
 * **NEVER** attempt to run bash commands directly on the local host system. You do not have host access.
 * **ALWAYS** use the MCP tools provided by the `devbox-mcp` server to execute commands on target container.
 * **Targeting Containers:** The MCP `execute_container_command` tool uses "Smart Routing." You do not need to look up complex Docker IDs or query a list. Simply pass the generic service name (e.g., `api` or `worker`) as the `container` parameter, and the MCP Gateway will automatically route it to the correct running instance.
-* **Long-Running Processes**: Do not start dev servers (e.g., `npm run dev`) via the MCP execution tool, as it will timeout. If a server needs to be started, instruct the user to run it in their own host terminal (e.g., `devbox-run api "npm run dev"`)
+* **Long-Running Processes**: The `execute_container_command` tool has a configurable `timeout` parameter (default: 180s). For quick commands, the default is fine. For longer operations, pass an explicit timeout (e.g., `timeout=600`). Do not start dev servers (e.g., `npm run dev`) via MCP even with a high timeout — instruct the user to run them in their host terminal via `devbox-run api "npm run dev"`.
 
 ## The 3-Way Path Mapping (CRITICAL)
 You are running in an isolated AI container. When you use the MCP Gateway, you are executing commands in a *different* container. You must translate paths between these two worlds:
