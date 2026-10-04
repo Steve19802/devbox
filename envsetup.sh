@@ -80,6 +80,15 @@ function devbox-down() {
   docker compose $DEVBOX_COMPOSE_ARGS down "$@"
 }
 
+function devbox-rebuild() {
+  echo "♻️  Rebuilding DevBox and renewing anonymous volumes..."
+  # Anonymous volumes (e.g. node_modules) are reused across container recreation,
+  # so dependency changes require renewing them to avoid stale packages.
+  docker compose $DEVBOX_COMPOSE_ARGS down
+  docker compose $DEVBOX_COMPOSE_ARGS build
+  docker compose $DEVBOX_COMPOSE_ARGS up --renew-anon-volumes "$@"
+}
+
 function devbox-logs() {
   # If no argument is passed, show all logs. Otherwise, show logs for the specific service.
   if [ -z "$1" ]; then
