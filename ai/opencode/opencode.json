@@ -3,7 +3,7 @@
   "mcp": {
     "devbox-mcp": {
       "type": "remote",
-      "url": "http://devbox-mcp:3000/sse"
+      "url": "http://devbox-mcp:3000/mcp"
     }
   }
 }

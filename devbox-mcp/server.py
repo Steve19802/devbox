@@ -1,10 +1,12 @@
 import asyncio
+import contextlib
 import subprocess
 import socket
 import uvicorn
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 
 def get_container_mapping() -> dict[str, str]:
@@ -182,15 +184,38 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=f"Execution Error: {str(e)}")]
 
 
-# --- HTTP / SSE Web Server Setup ---
+# --- HTTP Transport Setup ---
+# Legacy MCP HTTP+SSE transport (OpenCode v1): GET /sse opens the event stream,
+# POST /messages carries JSON-RPC.
 sse = SseServerTransport("/messages")
+
+# MCP Streamable HTTP transport (OpenCode v2 `type: "remote"`): POST/GET/DELETE /mcp.
+streamable = StreamableHTTPSessionManager(app=mcp_server)
+_streamable_stack = contextlib.AsyncExitStack()
 
 
 async def app(scope, receive, send):
     """
     Pure ASGI application.
     Bypasses all Starlette/FastMCP framework bugs by wiring Uvicorn directly to the MCP SDK.
+    Exposes both the legacy SSE transport (/sse, /messages) and Streamable HTTP (/mcp).
     """
+    if scope["type"] == "lifespan":
+        # StreamableHTTPSessionManager needs its task group running for the app lifetime.
+        while True:
+            message = await receive()
+            if message["type"] == "lifespan.startup":
+                try:
+                    await _streamable_stack.enter_async_context(streamable.run())
+                    await send({"type": "lifespan.startup.complete"})
+                except Exception as exc:
+                    await send({"type": "lifespan.startup.failed", "message": str(exc)})
+            elif message["type"] == "lifespan.shutdown":
+                await _streamable_stack.aclose()
+                await send({"type": "lifespan.shutdown.complete"})
+                return
+        return
+
     if scope["type"] != "http":
         return
 
@@ -207,6 +232,10 @@ async def app(scope, receive, send):
     elif path == "/messages" and method == "POST":
         # Let the MCP SDK handle the POST message natively (prevents the Starlette NoneType crash)
         await sse.handle_post_message(scope, receive, send)
+
+    elif path == "/mcp":
+        # Streamable HTTP transport used by OpenCode v2 remote MCP servers
+        await streamable.handle_request(scope, receive, send)
 
     else:
         # Fallback for invalid routes
