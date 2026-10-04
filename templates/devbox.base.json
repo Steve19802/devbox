@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "service": "my-app",
+  "dockerfile": "Dockerfile",
+  "dockerfile_context": ".",
+  "port": 5173,
+  "stages": {
+    "prod": "prod",
+    "dev": "dev"
+  },
+  "inject_ide": false,
+  "has_firebase": false,
+  "preserve_env": [],
+  "compose_files": [
+    "docker-compose.yml",
+    "docker-compose.dev.yml",
+    "build/docker-compose.mcp.yml"
+  ]
+}

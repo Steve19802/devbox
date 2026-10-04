@@ -3,8 +3,29 @@
 # Get the directory where envsetup.sh is located, then go up one level to the project root
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-# Define the 3-layer compose files as a single variable for easy reuse
-DEVBOX_COMPOSE_ARGS="-f $PROJECT_ROOT/docker-compose.yml -f $PROJECT_ROOT/docker-compose.dev.yml -f $PROJECT_ROOT/build/docker-compose.mcp.yml"
+# ---- Load project config (devbox.json) if it exists ----
+_DEVBOX_CONFIG="$PROJECT_ROOT/devbox.json"
+if [ -f "$_DEVBOX_CONFIG" ]; then
+  # Read compose_files from devbox.json to build DEVBOX_COMPOSE_ARGS
+  _COMPOSE_FILES=$(python3 -c "
+import json, sys
+try:
+    cfg = json.load(open('$_DEVBOX_CONFIG'))
+    files = cfg.get('compose_files', [])
+    sys.stdout.write(' '.join('-f $PROJECT_ROOT/' + f for f in files))
+except Exception as e:
+    sys.stderr.write('devbox: failed to parse devbox.json: ' + str(e) + chr(10))
+" 2>/dev/null)
+fi
+
+# Define the 3-layer compose files — overridable via devbox.json or environment
+if [ -n "$_COMPOSE_FILES" ]; then
+  DEVBOX_COMPOSE_ARGS="$_COMPOSE_FILES"
+elif [ -n "$DEVBOX_COMPOSE_ARGS" ]; then
+  : # Already set in environment
+else
+  DEVBOX_COMPOSE_ARGS="-f $PROJECT_ROOT/docker-compose.yml -f $PROJECT_ROOT/docker-compose.dev.yml -f $PROJECT_ROOT/build/docker-compose.mcp.yml"
+fi
 
 # Dynamically fetch the host's actual UID/GID to prevent permission issues
 LOCAL_UID=$(id -u 2>/dev/null || echo 1000)
@@ -27,6 +48,13 @@ function _devbox_run_python() {
     -e LOCAL_GID="$LOCAL_GID" \
     python:3.11-slim \
     python "/workspace/build/scripts/$script" "$@"
+}
+
+# --- Run Python script natively (no Docker) for adopt/local operations ---
+function _devbox_run_python_native() {
+  local script=$1
+  shift
+  python3 "$PROJECT_ROOT/build/scripts/$script" "$@"
 }
 
 function devbox-ai-setup() {
@@ -74,7 +102,7 @@ function devbox-ai() {
   echo "🔗 Attaching to network: $network_name"
 
   # IMPORTANT: Update this path to point to where your actual codebox script lives!
-  PROJECT_NETWORK="$network_name" codebox
+  PROJECT_NETWORK="$network_name" codebox "$@"
 }
 
 function _get_services() {
@@ -112,6 +140,11 @@ function devbox-edit() {
 function devbox-init() {
   echo "🏗️ Scaffolding new DevBox project..."
   _devbox_run_python scaffold.py /workspace "$@"
+}
+
+function devbox-adopt() {
+  echo "🏗️ Adopting existing project into DevBox..."
+  _devbox_run_python_native adopt.py "$PROJECT_ROOT" "$@"
 }
 
 function devbox-add-service() {
@@ -167,4 +200,10 @@ echo "💡 Available commands:"
 grep -oE '^function [^_][^ (]+' "${BASH_SOURCE[0]}" | awk '{print "   🚀 "$2}'
 
 echo ""
-echo "Run 'devbox-init' to scaffold your project"
+
+if [ -f "$PROJECT_ROOT/devbox.json" ]; then
+  echo "Run 'devbox-up' to start your environment"
+else
+  echo "Run 'devbox-adopt' to adopt this project into DevBox"
+  echo "or 'devbox-init' to scaffold a new project"
+fi
