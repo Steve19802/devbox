@@ -15,5 +15,17 @@
     "docker-compose.yml",
     "docker-compose.dev.yml",
     "build/docker-compose.mcp.yml"
-  ]
+  ],
+  "mcp": {
+    "protected_services": [],
+    "exec": {
+      "default_timeout": 180,
+      "max_timeout": 3600,
+      "max_output_kb": 64
+    },
+    "processes": {
+      "max_per_container": 5,
+      "max_log_mb": 10
+    }
+  }
 }
