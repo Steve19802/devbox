@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the server logic (Immutable at runtime for security)
 COPY server.py .
+COPY devbox-proc.sh .
 
 # Run the Uvicorn web server
 CMD ["python", "server.py"]
