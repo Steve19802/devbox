@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import os
+import posixpath
 import re
 import secrets
 import socket
@@ -155,6 +156,8 @@ class ContainerInfo:
     started_at: str
     health: Optional[str]
     restart_count: int
+    workdir: Optional[str] = None
+    mounts: tuple[tuple[str, str], ...] = ()
 
 
 def _labels(obj: dict) -> dict:
@@ -167,6 +170,35 @@ def _networks(obj: dict) -> list[str]:
         return list(networks.keys())
     mode = (obj.get("HostConfig") or {}).get("NetworkMode")
     return [mode] if mode else []
+
+
+def _project_mounts(
+    raw_mounts: object, project_dir: str
+) -> tuple[tuple[str, str], ...]:
+    """Map bind mounts inside the compose project dir to (host_rel, container).
+
+    ``project_dir`` and each mount Source are absolute HOST paths; the MCP
+    container cannot see them, so this is pure posix path math (never touches
+    the filesystem). Binds outside the project dir (docker socket, editor
+    config, ...) and non-bind mounts (volumes, tmpfs) are skipped. The project
+    root itself maps to ".". Results are sorted by container path.
+    """
+    if not project_dir or not isinstance(raw_mounts, list):
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for mount in raw_mounts:
+        if not isinstance(mount, dict) or mount.get("Type") != "bind":
+            continue
+        source = mount.get("Source") or ""
+        destination = mount.get("Destination") or ""
+        if not source or not destination:
+            continue
+        rel = posixpath.relpath(source, project_dir)
+        if rel == ".." or rel.startswith("../"):
+            continue
+        pairs.append((rel, destination))
+    pairs.sort(key=lambda pair: pair[1])
+    return tuple(pairs)
 
 
 async def _inspect_one(identifier: str) -> dict:
@@ -239,6 +271,7 @@ async def _discover_containers() -> tuple[dict[str, ContainerInfo], dict[str, st
             continue
 
         state = obj.get("State") or {}
+        project_dir = labels.get("com.docker.compose.project.working_dir", "")
         container = ContainerInfo(
             service=service,
             id=obj.get("Id", ""),
@@ -248,6 +281,8 @@ async def _discover_containers() -> tuple[dict[str, ContainerInfo], dict[str, st
             started_at=state.get("StartedAt", ""),
             health=(state.get("Health") or {}).get("Status"),
             restart_count=obj.get("RestartCount", 0),
+            workdir=(obj.get("Config") or {}).get("WorkingDir") or None,
+            mounts=_project_mounts(obj.get("Mounts"), project_dir),
         )
 
         if labels.get("com.docker.compose.project", "") != project:
@@ -287,6 +322,39 @@ async def resolve_scoped_container(service: str) -> Optional[ContainerInfo]:
     reason = reasons.get(service, "unknown")
     print(f"⛔ --- SCOPE DENY [{service}] reason={reason} ---", flush=True)
     return None
+
+
+def _path_hint(info: ContainerInfo) -> str:
+    """One line explaining how the container maps to workspace folders.
+
+    Prefers the (deepest) project mount that contains the container working
+    dir; otherwise lists every project mount; otherwise says nothing is shared.
+    """
+    workdir = info.workdir
+    if workdir is not None:
+        best: Optional[str] = None
+        best_host: Optional[str] = None
+        for host, dest in info.mounts:
+            contains = workdir == dest or workdir.startswith(dest.rstrip("/") + "/")
+            if contains and (best is None or len(dest) > len(best)):
+                best, best_host = dest, host
+        if best is not None:
+            return (
+                f"Host folder '{best_host}' is mounted at {best} "
+                f"(container working dir: {workdir})."
+            )
+    if not info.mounts:
+        return (
+            "No project folder is mounted in this container; files created here "
+            "are not visible in your workspace."
+        )
+    listing = ", ".join(f"'{host}' at {dest}" for host, dest in info.mounts)
+    if workdir is not None:
+        return (
+            f"Project folders mounted in this container: {listing} "
+            f"(container working dir: {workdir}, not inside a mounted project folder)."
+        )
+    return f"Project folders mounted in this container: {listing}."
 
 
 # --- Output / argument helpers ---
@@ -680,6 +748,7 @@ async def handle_start_process(arguments: dict) -> str:
         (await run_proc_script(info.id, "logs", pid, "20"))[1]
     )
     return (
+        f"{_path_hint(info)}\n"
         f"Started process '{pid}' in '{container}'.\n{outcome_line}\n\n"
         f"Recent log (last 20 lines):\n{tail_content.strip() or '(no output yet)'}\n\n"
         f"Read more with get_process_output(container='{container}', id='{pid}') "
@@ -809,6 +878,8 @@ async def handle_list_services(arguments: dict) -> str:
             "health": c.health,
             "started_at": c.started_at,
             "restart_count": c.restart_count,
+            "workdir": c.workdir,
+            "mounts": [{"host": host, "container": dest} for host, dest in c.mounts],
         }
         for c in sorted(scoped.values(), key=lambda c: c.service)
     ]
@@ -904,10 +975,10 @@ def build_execute_container_command_tool(service_names: list[str]) -> Tool:
     return Tool(
         name="execute_container_command",
         description=(
-            "Execute a bash/shell command inside a specific Docker container."
-            "CRITICAL PATH MAPPING: Commands run inside the target container's /app/ directory. "
-            "Any files you create at /app/ will appear in your local workspace under src/<service_name>/. "
-            "For dev servers, watchers or anything long-running use start_process instead."
+            "Execute a bash/shell command inside a specific Docker container. "
+            "Commands run in the container's working directory; call list_services "
+            "to see which workspace folder is mounted where. For dev servers, "
+            "watchers or anything long-running use start_process instead."
         ),
         inputSchema={
             "type": "object",
@@ -952,7 +1023,9 @@ def build_start_process_tool(service_names: list[str]) -> Tool:
         name="start_process",
         description=(
             "Start a long-running command (dev server, watcher, build) detached in a "
-            "running container. Returns immediately with a generated process id; "
+            "running container. Commands run in the container's working directory; "
+            "call list_services to see which workspace folder is mounted where. "
+            "Returns immediately with a generated process id; "
             "optionally waits for a ready_pattern in the output. Monitor with "
             "list_processes / get_process_output and stop with stop_process."
         ),
@@ -1067,7 +1140,8 @@ def build_list_services_tool(service_names: list[str]) -> Tool:
         name="list_services",
         description=(
             "List in-scope compose services (JSON) including stopped containers: service, "
-            "container name, status, running, health, started_at, restart_count."
+            "container name, status, running, health, started_at, restart_count, workdir, "
+            "mounts (the host workspace folder mounted to each container path)."
         ),
         inputSchema={"type": "object", "properties": {}},
     )
