@@ -6,7 +6,7 @@ Welcome to the **DevBox Platform**. This directory (`build/`) contains the immut
 
 This platform was engineered using enterprise-grade platform principles:
 
-1. **Zero Host Dependencies:** You only need Docker installed on your machine. No Python virtual environments, no Node version managers, no local databases polluting your host OS.
+1. **Zero Host Dependencies:** You only need Docker (plus `python3`, used by `envsetup.sh` and `devbox-adopt`) installed on your machine. No Python virtual environments, no Node version managers, no local databases polluting your host OS.
 2. **Strict Separation of Concerns:**
    - `build/` = Immutable Infrastructure, Template Engine, & Standard AI Tools.
    - `src/` = Business Logic & Application Code.
@@ -21,17 +21,21 @@ This platform was engineered using enterprise-grade platform principles:
 ```text
 my-app/ (Project Root)
 │
-├── .env                      <-- Auto-generated: Host UID/GID & Tool versions
+├── .env                      <-- Auto-generated (scaffold): Host UID/GID & tool versions
 ├── docker-compose.yml        <-- LAYER 1: Production Base (Pure App)
 ├── docker-compose.dev.yml    <-- LAYER 2: Dev Overrides (Volume Mounts)
-├── ARCHITECTURE.md           <-- Auto-generated documentation for the app developers
+├── devbox.json               <-- Project config (v2: services, layout, MCP settings)
+├── ARCHITECTURE.md           <-- App docs; DevBox writes only its marker block (or DEVBOX.md)
 │
 ├── build/                    <-- 🏗️ INFRASTRUCTURE (You are here)
 │   ├── envsetup.sh           <-- The CLI router & autocompletion engine
 │   ├── docker-compose.mcp.yml<-- LAYER 3: Platform Infra (DevBox MCP)
 │   ├── devbox-mcp/           <-- The Python MCP Docker Gateway
-│   ├── scripts/              <-- Python CLI scripts (scaffold.py, ai_setup.py, compile_ai.py)
-│   ├── templates/            <── Template engine (manifest.json, dockerfiles/, compose/)
+│   ├── scripts/              <-- Python CLI scripts (scaffold.py, adopt.py,
+│   │                             manage_service.py, devbox_config.py,
+│   │                             ai_setup.py, compile_ai.py)
+│   ├── templates/            <── Template engine (manifest.json, dockerfiles/, devbox.base.json)
+│   ├── tests/                <-- stdlib unittest suite for the CLI scripts
 │   └── ai/                   <-- The "Standard Library" of AI tools
 │
 └── src/                      <-- 💻 BUSINESS LOGIC
@@ -39,6 +43,53 @@ my-app/ (Project Root)
     ├── <service_2>/          <-- Multi-stage Dockerfile
     └── ...
 ```
+
+> `src/<service>/` is only the **scaffold default**. An adopted project keeps its
+> own layout — for example `apps/web -> /usr/src/app`, `services/api -> /srv/api`,
+> or the whole project root `. -> /app` — tracked per service in `devbox.json`.
+
+### `devbox.json` (schema v2)
+
+Every project has a `devbox.json` at its root describing its services and host -> container layout. Older **v1** files are upgraded to v2 automatically when loaded (the file is rewritten on the next DevBox write).
+
+```json
+{
+  "version": 2,
+  "mode": "adopt",
+  "services": [
+    {
+      "name": "web",
+      "source": "apps/web",
+      "workdir": "/usr/src/app",
+      "context": "apps/web",
+      "dockerfile": "Dockerfile",
+      "target": "dev",
+      "port": 5173,
+      "runtime": "node",
+      "managed": false
+    }
+  ],
+  "inject_ide": false,
+  "compose_files": ["docker-compose.yml", "docker-compose.dev.yml", "build/docker-compose.mcp.yml"],
+  "mcp": {}
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `version` | Schema version (`2`); v1 files are upgraded on load. |
+| `mode` | `"scaffold"` (created by `devbox-init`) or `"adopt"` (brownfield). |
+| `services[].name` | Compose service name (`^[a-z0-9][a-z0-9_-]*$`). |
+| `services[].source` | Host folder relative to the project root (`.` = root), or `null` for an image-only service. |
+| `services[].workdir` | Container path where `source` is mounted, or `null`. |
+| `services[].context` | Build context relative to the project root, or `null`. |
+| `services[].dockerfile` | Dockerfile path relative to `context`. |
+| `services[].target` | Build target used for dev, or `null`. |
+| `services[].port` | Main container port, or `null`. |
+| `services[].runtime` | `node` / `python` / `go` / ... or `null` if unknown. |
+| `services[].managed` | `true` = created by DevBox (may be deleted); `false` = user-owned (never touched). |
+| `compose_files` | The compose layers DevBox invokes, in order. |
+| `mcp` | AI scope/limits — see the MCP section below. |
 
 ---
 
@@ -62,6 +113,8 @@ devbox-init
 ```bash
 devbox-init --service api:node:3000 --service worker:python:8000 --inject-ide
 ```
+
+*`devbox-init` refuses to run in a folder that already has a `devbox.json` or a compose file — use `devbox-adopt` for an existing project, or pass `--force` to scaffold anyway.*
 
 ### 3. Compile your AI Toolchain
 ```bash
@@ -91,14 +144,60 @@ If you choose **No**:
 
 ---
 
+## 🧳 Adopting an Existing Project
+
+Use `devbox-adopt` to bring an existing project under DevBox **without restructuring it**. It runs natively on the host (Docker is used when available but never required).
+
+### What discovery does
+
+`devbox-adopt` builds a plan by scanning the project in this order:
+
+1. **Compose file** — if Docker is available it reads `docker compose config --format json`; otherwise a built-in fallback parser reads `docker-compose.yml` (or `compose.yml`/`.yaml`). Each service's build context, `WORKDIR`, exposed/compose port and existing bind mounts are read.
+2. **Dockerfiles** — when there is no compose file, it searches for `Dockerfile`/`Dockerfile.*`/`*.Dockerfile` (up to 4 levels deep, skipping `.git`, `node_modules`, `build/`, ...) and turns each into a service.
+3. **Runtime fallback** — when there is neither, it detects the project runtime (`node`, `python`, `go`, ...) and offers to generate a root `Dockerfile` from the matching DevBox template.
+
+`--service name:source[:workdir]` overrides or extends the result; `--dry-run` prints the plan and writes nothing.
+
+### Generated vs. never touched
+
+Adoption is non-destructive. DevBox only creates the pieces a project is missing, and only ever edits user files through marker blocks — and only with consent (an interactive prompt, or `--yes`).
+
+| Always generated (DevBox-owned) | Only marker-scoped | Never touched |
+| --- | --- | --- |
+| `devbox.json` | `ARCHITECTURE.md` DevBox block (or `DEVBOX.md` if you keep your own `ARCHITECTURE.md`) | Your source folders |
+| `docker-compose.dev.yml` | `.gitignore` DevBox block | Your Dockerfiles |
+| `docker-compose.yml` *(only when none exists)* | | Your `docker-compose.yml` (when it already exists) |
+| `ai/` *(empty, for overrides)* | | `.env` (adopted projects never get it edited) |
+| a root `Dockerfile` *(only from the runtime fallback)* | | |
+
+### Source -> workdir mapping
+
+Each adopted service keeps the layout its image already expects: `source` is set to the Dockerfile's build context and `workdir` to its `WORKDIR` (or an existing compose bind target), so the container sees the same paths as the image — never a blind `.:/app`.
+
+> ⚠️ **Root-mount warning:** if a service's `source` resolves to `.`, the **whole project** (including `build/` and `.env`) is mounted into that container. `devbox-adopt` flags this and lets you pick a narrower folder.
+
+### UID/GID
+
+The generated `docker-compose.dev.yml` sets `user: "${DEVBOX_UID:-1000}:${DEVBOX_GID:-1000}"`, and `envsetup.sh` exports `DEVBOX_UID`/`DEVBOX_GID` from your host account, so files created inside containers are owned by you. (`.env.devbox` is no longer generated.)
+
+### Re-running adopt
+
+Running `devbox-adopt` again **keeps** the existing `devbox.json` and only (re)generates missing files; interactively it asks whether to re-run discovery. Use `--dry-run` to preview and `--yes` to accept all prompts non-interactively.
+
+---
+
 ## 🛠️ CLI Command Reference
 
 *(Tip: Press `TAB` after typing these commands to auto-complete service names!)*
 
-* **`devbox-init [--service name:runtime:port] [--inject-ide]`**: Scaffolds the project with interactive wizard or CLI flags.
+* **`devbox-init [--service name:runtime:port] [--inject-ide] [--force]`**: Scaffolds a **new** project with the interactive wizard or CLI flags. Refuses to run when the folder already has a `devbox.json` or a compose file; pass `--force` to scaffold anyway.
+* **`devbox-adopt [--dry-run] [--yes] [--service name:source[:workdir]] [--inject-ide]`**: Adopts an **existing** project — see [Adopting an Existing Project](#-adopting-an-existing-project) below.
+* **`devbox-add-service [--name <name> --runtime <runtime> --port <port> --path <host-folder> --inject-ide]`**: Adds a service. Interactive mode prompts for the host location (default `src/<name>`); `--path` sets it non-interactively. DevBox owns — and may delete — the files it creates.
+* **`devbox-remove-service [service]`**: Removes a service. For DevBox-**managed** services it removes the compose entries and offers to delete the Dockerfile/source folder; for `managed: false` (adopted/user-owned) services it only removes the DevBox dev-override entry and leaves the source, Dockerfile and base `docker-compose.yml` entry in place (remove those manually).
 * **`devbox-ai-setup [tool_name]`**: Compiles the AI configuration (interactive or direct).
 * **`devbox-build [args]`**: Builds the Docker containers across all 3 layers. 
 * **`devbox-up [args]`**: Starts the environment (attached by default; pass `-d` for detached mode).
+* **`devbox-rebuild [args]`**: Rebuilds from scratch: `down` + `build` + `up --renew-anon-volumes` (refreshes anonymous volumes such as `node_modules`).
 * **`devbox-down [args]`**: Gracefully stops the environment.
 * **`devbox-logs [service]`**: Tails logs for a specific service (or all services).
 * **`devbox-ps [-a] [service]`**: Table of the running long-running processes the AI started (`SERVICE ID NAME STATUS UPTIME COMMAND`). Like `docker ps`, pass `-a` to include exited/lost ones.
@@ -137,7 +236,7 @@ The AI connects to an isolated Python container running an HTTP Server-Sent Even
 | `list_processes` | List running supervised processes, in one service or across all running services; `all=true` also includes exited/lost ones (like `docker ps -a`). |
 | `get_process_output` | Read a started process's log; page forward with `offset=next_offset`. |
 | `stop_process` | Stop a started process (SIGTERM the group, SIGKILL after grace). |
-| `list_services` | List in-scope services: status, health, uptime, restart count. |
+| `list_services` | List in-scope services: status, health, uptime, restart count, plus the real container `workdir` and `mounts` (`{host, container}` = host folder -> container path). |
 | `service_logs` | Read a container's stdout+stderr from container start (`tail`/`since`). |
 | `restart_service` / `stop_service` / `start_service` | Restart/stop/start a service's container by ID. |
 
@@ -185,4 +284,14 @@ Long-running processes are supervised from inside each target container by `buil
 Out-of-range or invalid values fall back to the default (or clamp to the cap) and log a warning.
 
 **How it is applied:** `envsetup.sh` reads `devbox.json` and exports `DEVBOX_MCP_*` environment variables, and `docker-compose.mcp.yml` passes them into the MCP container. Settings are read **once at MCP startup** — run `devbox-up` to apply changes (Compose re-creates the MCP container when its environment changes).
+
+---
+
+## 🧪 Tests
+
+The CLI scripts are covered by a stdlib `unittest` suite in `build/tests/`. Run it from `build/`:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
 

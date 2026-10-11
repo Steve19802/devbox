@@ -9,18 +9,55 @@ You are operating within "DevBox," a highly secure, containerized Internal Devel
 
 To successfully assist the developer, you MUST strictly adhere to the following architectural rules:
 
-## 📂 Directory Structure
+## 📂 Project Layout & Path Mapping (CRITICAL)
 
-    .
-    ├── ai/                       <-- 🧠 Project-specific AI overrides (agents/MCPs)
-    ├── build/                    <-- ⚙️ Immutable DevBox Infrastructure (READ-ONLY)
-    ├── src/                      <-- 💻 Application Code
-    │   ├── [CONTAINER_NAME_1]    <-- App service 1
-    │   ├── [CONTAINER_NAME_2]    <-- App service 2
-    │   ├── ...
-    │   └── [CONTAINER_NAME_n]    <-- App service n
-    ├── docker-compose.yml        <-- 🚀 Production Base (Pure app services, no dev tools)
-    └── docker-compose.dev.yml    <-- 🛠️ Local Dev Overrides (Volume mounts, hot-reloading)
+DevBox does **not** impose a directory layout. The `src/<service>/ -> /app` layout is only the default for projects created by `devbox-init`. An adopted project keeps whatever layout it already has — for example `apps/web -> /usr/src/app`, `services/api -> /srv/api`, or the whole project root `. -> /app`. **Never move, rename or restructure the user's folders to "fit" DevBox**: the container is configured to match the project, not the other way around. Services marked `"managed": false` in `devbox.json` are **user-owned**; leave their source folders, Dockerfiles and `docker-compose.yml` entries alone.
+
+### How to find the real mapping (authoritative)
+
+Call the MCP `list_services` tool. Each entry reports the container `workdir` and its project `mounts` as a list of `{host, container}` pairs, where `host` is a path relative to the project root (the folder you edit) and `container` is the absolute path inside that service's container:
+
+```json
+{
+  "service": "web",
+  "container": "my-app-web-1",
+  "running": true,
+  "workdir": "/usr/src/app",
+  "mounts": [ { "host": "apps/web", "container": "/usr/src/app" } ]
+}
+```
+
+This runtime output is the **source of truth**. Secondary sources (may be stale, so use them only to double-check):
+* `devbox.json` — each `services[]` entry has `source` (host folder) and `workdir` (container path).
+* `ARCHITECTURE.md` — DevBox generates a services table with the same host -> container mapping (stored in `DEVBOX.md` when you keep your own `ARCHITECTURE.md`).
+* `docker-compose.yml` / `docker-compose.dev.yml` — the raw `volumes:` entries.
+
+The platform is tech-agnostic, so read the actual project instead of assuming a stack. Services may be defined in either compose file (e.g. a `playwright` service that exists only in `docker-compose.dev.yml`), and the languages/frameworks depend entirely on the developer's project.
+
+### Path translation rule
+
+You edit files in the host folder; MCP commands run in the container. Translate through the matching mount:
+
+* container path = `<mount.container>/<rest>`
+* host path = `<project_root>/<mount.host>/<rest>`
+
+Worked example, using the `list_services` output above (`apps/web` mounted at `/usr/src/app`):
+
+```bash
+# You run this via MCP in the web container:
+execute_container_command(container="web", command="mkdir /usr/src/app/src/test")
+# That file now exists on the host at:
+#   <project_root>/apps/web/src/test
+```
+
+**Boundaries:**
+* A path is only shared if it is inside one of that service's `mounts`. Files outside every mount are **not** visible to the container, and files the container writes outside its mounts are **not** visible to you.
+* A service with an empty `mounts` list shares **no** files with you: anything it writes is trapped in the container and lost when it is re-created.
+* `workdir` is where a command starts inside the container and is usually (but not always) inside a mount. If it is not inside any mount, treat the whole container filesystem as ephemeral except for the listed mounts.
+
+### File edits sync automatically
+
+When editing code, use your standard file-writing capabilities on the host path (e.g. `<project_root>/apps/web/src/...`). The Docker volume mounts sync those changes into the running containers instantly — you do not need to run bash commands to edit files.
 
 ## The 3-Layer Docker System
 We use a 3-tier architecture to maintain production parity:
@@ -54,7 +91,7 @@ Processes persist after your session ends. When you finish, tell the user what y
 **Binding:** any server you start must bind `0.0.0.0`, not `127.0.0.1`/`localhost`, or the developer cannot reach it from their host machine.
 
 **Service control:**
-* `list_services` — the in-scope services with status, health, uptime, and restart count.
+* `list_services` — the in-scope services with status, health, uptime, restart count, working dir and mounted workspace folders.
 * `service_logs` — a container's stdout+stderr **from container start**, ideal for diagnosing startup errors (works on stopped containers too).
 * `restart_service` / `stop_service` / `start_service` — restart/stop/start a service's container. Restarting or stopping **kills any process you started with `start_process` in that container**.
 * Builds, container re-creation, `docker compose down`, and volume changes are **not** available via MCP. Ask the user to run `devbox-up`, `devbox-rebuild`, or `devbox-build` on the host.
@@ -65,63 +102,12 @@ Processes persist after your session ends. When you finish, tell the user what y
 
 **Guardrails:** **NEVER** modify the `mcp` section of `devbox.json` — it defines your own scope and limits. If a limit blocks the task, ask the user.
 
-## The 3-Way Path Mapping (CRITICAL)
-You are running in an isolated AI container. When you use the MCP Gateway, you are executing commands in a *different* container. You must translate paths between these two worlds:
-
-* **Your View (File Editing):** You access files relative to your current working directory (the project root). Example: `src/api/app.ts`.
-* **The Target Container View (MCP Execution):** The target containers mount their specific source folder directly to `/app/`.
-* **The Translation Rule:** When you run a command via MCP in any container, it executes inside `/app/`. If that command creates a file at `/app/new-file.txt`, you must use your file tools to edit it at `src/[CONTAINER_NAME]/new-file.txt`.
-
-## Container Path Mapping (CRITICAL - Read Carefully)
-
-You (the AI Agent) run in an isolated container with the project root mapped in.
-There are THREE path perspectives you must understand:
-
-### 1. Your Container (AI Agent) - Where you read/write files
-- **Project root path (`PROJECT_ROOT`)**: This is the path where you were started. It follows this rule: `BOX/[HOST_NAME]/[PROJECT_NAME]`. Example: `/BOX/P14SNTBK/my-new-project/`
-- **Containers path**: This is the path to the code and files of the containers. It follows this rule: `[PROJECT_ROOT]/src/[CONTAINER_NAME]`.
-
-### 2. Target Containers - Where MCP commands execute
-- **Container working path**: Unless otherwise specified, the base path for containers is `/app/`. Each container maps `[PROJECT_ROOT]/src/[CONTAINER_NAME]/` to `/app/`.
-
-### 3. Path Translation Rule
-When you execute a command via MCP that creates files at `/app/foo` in the `[CONTAINER_NAME]` container,
-those files will appear at `[PROJECT_ROOT]/src/[CONTAINER_NAME]/foo` from your perspective.
-
-**Example:**
-```bash
-# You run this via MCP in the api container:
-devbox-mcp_execute_container_command(container="api", command="mkdir /app/test")
-# You then access it at:
-read(filePath="/BOX/P14SNTBK/my-new-project/src/api/test")
-```
-
-### 4. Verification Step (Do this once per session)
-Read `docker-compose.dev.yml` to confirm exact volume mappings:
-```bash
-read(filePath="/BOX/P14SNTBK/my-new-project/docker-compose.dev.yml")
-```
-
-## Quick path reference
-```
-AI Container:    /BOX/[HOST_NAME]/[PROJECT_NAME]/src/[service]/
-Target Container: /app/
-```
-
-## Dynamic Container Discovery & Mapping
-This platform is tech-agnostic. The specific containers, languages, and frameworks depend entirely on the developer's project.
-* **To understand the project stack:** Read the `ARCHITECTURE.md` file, `docker-compose.yml`, **and** `docker-compose.dev.yml` in the project root to learn what services exist. Services may be defined in either file (e.g., a `playwright` service in `docker-compose.dev.yml`).
-* **Source Code Mapping:** The host directory generally maps to the `/app` directory inside the respective containers (e.g., host `src/<service_name>/` usually maps to container `/app/`). Check the compose file volumes to verify.
-
 ## Network Discovery
 * The containers communicate on an isolated, internal Docker network. 
 * To reach one container from another, use its Docker Compose service name as the hostname (e.g., `http://<service_name>:<port>`). Do not use `localhost` for container-to-container communication.
 
 ## Port Exposing
 * If you create or start a new development server (e.g., Vite, Django, Go), it must bind to `0.0.0.0`, NOT `127.0.0.1` or `localhost`. If it binds to localhost inside the container, the developer will not be able to reach it from their host machine's browser.
-
-## File System Edits
-* When editing code, use your standard file-writing capabilities on the host paths (e.g., `src/...`). The Docker volume mounts will instantly sync these changes into the running containers. You do not need to execute bash commands to edit files.
 
 ## Third-Party Skill Execution (The Skill Mount)
 When utilizing external skills (e.g., from Anthropic), those skills may instruct you to run local scripts like `bash scripts/setup.sh`. 
