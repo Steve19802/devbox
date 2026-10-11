@@ -12,10 +12,19 @@ and generates only the missing pieces needed by devbox:
 No source files are moved or modified.
 """
 
+import copy
 import json
 import os
 import pwd
 import sys
+
+# Default MCP process/service-control configuration (see build/scripts/scaffold.py
+# and build/templates/devbox.base.json). Deep-copied wherever it is embedded.
+DEFAULT_MCP_CONFIG = {
+    "protected_services": [],
+    "exec": {"default_timeout": 180, "max_timeout": 3600, "max_output_kb": 64},
+    "processes": {"max_per_container": 5, "max_log_mb": 10},
+}
 
 
 def find_existing_dockerfile(project_root):
@@ -401,6 +410,7 @@ def scan_adopt(project_root):
             "docker-compose.dev.yml",
             "build/docker-compose.mcp.yml"
         ],
+        "mcp": copy.deepcopy(DEFAULT_MCP_CONFIG),
     }
     if functions_dir:
         cfg["functions_dir"] = functions_dir

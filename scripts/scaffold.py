@@ -1,6 +1,15 @@
+import copy
 import json
 import os
 import sys
+
+# Default MCP process/service-control configuration (kept in sync with
+# build/templates/devbox.base.json). Deep-copied wherever it is embedded.
+DEFAULT_MCP_CONFIG = {
+    "protected_services": [],
+    "exec": {"default_timeout": 180, "max_timeout": 3600, "max_output_kb": 64},
+    "processes": {"max_per_container": 5, "max_log_mb": 10},
+}
 
 
 def load_manifest(build_dir):
@@ -109,6 +118,28 @@ def generate_compose_dev(services, inject_ide, manifest, output_dir):
         print(f"  Created {path}")
     else:
         print(f"  Skipped {path} (already exists)")
+
+
+def generate_devbox_json(services, inject_ide, output_dir):
+    path = os.path.join(output_dir, "devbox.json")
+    if os.path.exists(path):
+        print(f"  Skipped {path} (already exists)")
+        return
+
+    content = {
+        "version": 1,
+        "services": services,
+        "inject_ide": inject_ide,
+        "compose_files": [
+            "docker-compose.yml",
+            "docker-compose.dev.yml",
+            "build/docker-compose.mcp.yml"
+        ],
+        "mcp": copy.deepcopy(DEFAULT_MCP_CONFIG),
+    }
+    with open(path, "w") as f:
+        f.write(json.dumps(content, indent=2) + "\n")
+    print(f"  Created {path}")
 
 
 def generate_dockerfile(svc, manifest, build_dir, inject_ide, output_dir):
@@ -324,6 +355,7 @@ def main():
 
     generate_compose(services, project_root)
     generate_compose_dev(services, inject_ide, manifest, project_root)
+    generate_devbox_json(services, inject_ide, project_root)
 
     for svc in services:
         generate_dockerfile(svc, manifest, build_dir, inject_ide, project_root)

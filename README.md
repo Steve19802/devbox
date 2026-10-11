@@ -101,6 +101,9 @@ If you choose **No**:
 * **`devbox-up [args]`**: Starts the environment (attached by default; pass `-d` for detached mode).
 * **`devbox-down [args]`**: Gracefully stops the environment.
 * **`devbox-logs [service]`**: Tails logs for a specific service (or all services).
+* **`devbox-ps [-a] [service]`**: Table of the running long-running processes the AI started (`SERVICE ID NAME STATUS UPTIME COMMAND`). Like `docker ps`, pass `-a` to include exited/lost ones.
+* **`devbox-ps logs <service> <id> [-f]`**: Shows the last 200 lines of an AI-started process, or follows it until it exits with `-f`.
+* **`devbox-ps stop <service> <id> [grace]`**: Stops an AI-started process (default grace: 10s).
 * **`devbox-run <service> <command>`**: Executes a command inside a specific running container.
 * **`devbox-edit <service>`**: Attaches the containerized IDE to the target service.
 
@@ -124,4 +127,62 @@ The AI connects to an isolated Python container running an HTTP Server-Sent Even
 * **Self-Discovery:** The MCP reads the Docker socket and dynamically feeds the AI a live list of sibling containers it is allowed to interact with.
 * **Collision-Proof:** The container dynamically resolves its own network name, meaning you can run multiple DevBox projects on the same host machine simultaneously without conflicts.
 * **The Warden:** The AI cannot interact with containers outside of this project, nor can it execute commands inside the MCP container itself or on your host OS.
+
+### 🧰 MCP Tools
+
+| Tool | Purpose |
+| --- | --- |
+| `execute_container_command` | Run a short command in a container (configurable `timeout`). |
+| `start_process` | Start a long-running command (dev server/watcher) detached; optionally wait for a `ready_pattern`. |
+| `list_processes` | List running supervised processes, in one service or across all running services; `all=true` also includes exited/lost ones (like `docker ps -a`). |
+| `get_process_output` | Read a started process's log; page forward with `offset=next_offset`. |
+| `stop_process` | Stop a started process (SIGTERM the group, SIGKILL after grace). |
+| `list_services` | List in-scope services: status, health, uptime, restart count. |
+| `service_logs` | Read a container's stdout+stderr from container start (`tail`/`since`). |
+| `restart_service` / `stop_service` / `start_service` | Restart/stop/start a service's container by ID. |
+
+Builds, container re-creation, `docker compose down`, and volume changes are intentionally **not** exposed; run `devbox-up`, `devbox-rebuild`, or `devbox-build` on the host instead.
+
+### 🔒 Scope Policy
+
+A container is in scope only if all of the following hold, checked inside the MCP server at every call (never cached):
+* It carries the **same `com.docker.compose.project` label** as the MCP container.
+* It is attached to a network the MCP container is also on **and** that network belongs to the same compose project.
+* It is **not the MCP container itself**.
+* Its service is **not protected** (`mcp.protected_services`).
+
+Anything else resolves to `Service '<name>' not found or not allowed.` This policy is enforced inside the MCP container, which is the **only** component with the Docker socket mounted — the AI container must never receive it.
+
+### 🔄 In-Container Process Model
+
+Long-running processes are supervised from inside each target container by `build/devbox-mcp/devbox-proc.sh`, which is streamed over stdin and never installed on disk:
+* State lives in `${DEVBOX_PROC_DIR:-/tmp/devbox-proc}/<id>/` inside the container, so processes **survive MCP restarts and agent sessions**.
+* That state is part of the container filesystem, so it is **lost when the container is re-created** (e.g. a `devbox-up`/`devbox-rebuild` after a compose change).
+* Detached processes require **`setsid`**: present in Debian images via `util-linux`, and in Alpine via `busybox`. Without it, `start_process` fails with an install hint.
+* Add **`init: true`** to your services so finished children get reaped instead of accumulating as zombies.
+
+### ⚙️ Configuration
+
+`devbox-init` and `devbox-adopt` generate an optional `mcp` section in `devbox.json` (all keys optional; shown with their defaults):
+
+```json
+"mcp": {
+  "protected_services": [],
+  "exec":      { "default_timeout": 180, "max_timeout": 3600, "max_output_kb": 64 },
+  "processes": { "max_per_container": 5, "max_log_mb": 10 }
+}
+```
+
+| Key | Meaning | Default | Hard cap |
+| --- | --- | --- | --- |
+| `mcp.protected_services` | Services the AI may never touch | `[]` | — |
+| `mcp.exec.default_timeout` | Default `execute_container_command` timeout (s) | `180` | `max_timeout` |
+| `mcp.exec.max_timeout` | Maximum allowed timeout (s) | `3600` | `3600` |
+| `mcp.exec.max_output_kb` | Output kept per stream (KB) | `64` | `1024` |
+| `mcp.processes.max_per_container` | Max supervised processes per container | `5` | `20` |
+| `mcp.processes.max_log_mb` | Per-process log cap before rotation (MB) | `10` | `100` |
+
+Out-of-range or invalid values fall back to the default (or clamp to the cap) and log a warning.
+
+**How it is applied:** `envsetup.sh` reads `devbox.json` and exports `DEVBOX_MCP_*` environment variables, and `docker-compose.mcp.yml` passes them into the MCP container. Settings are read **once at MCP startup** — run `devbox-up` to apply changes (Compose re-creates the MCP container when its environment changes).
 

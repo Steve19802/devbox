@@ -35,7 +35,35 @@ Please edit `docker-compose.dev.yml` for local testing, and only modify `docker-
 * **NEVER** attempt to run bash commands directly on the local host system. You do not have host access.
 * **ALWAYS** use the MCP tools provided by the `devbox-mcp` server to execute commands on target container.
 * **Targeting Containers:** The MCP `execute_container_command` tool uses "Smart Routing." You do not need to look up complex Docker IDs or query a list. Simply pass the generic service name (e.g., `api` or `worker`) as the `container` parameter, and the MCP Gateway will automatically route it to the correct running instance.
-* **Long-Running Processes**: The `execute_container_command` tool has a configurable `timeout` parameter (default: 180s). For quick commands, the default is fine. For longer operations, pass an explicit timeout (e.g., `timeout=600`). Do not start dev servers (e.g., `npm run dev`) via MCP even with a high timeout — instruct the user to run them in their host terminal via `devbox-run api "npm run dev"`.
+* **Long-Running Processes**: For dev servers, watchers, or anything that does not exit on its own, use `start_process` — never background with `&`/`nohup` inside `execute_container_command`. For short commands, `execute_container_command` has a configurable `timeout`. See the **Long-Running Processes & Service Control** section below.
+
+## Long-Running Processes & Service Control
+
+**Choosing the right tool:**
+* **Short commands** (installs, tests, a build step, git, file ops) → `execute_container_command`. Its `timeout` parameter defaults to 180s and is capped at `max_timeout`; both are configurable in `devbox.json` (check the tool schema for the live values). Raise it for longer tasks (e.g. `timeout=600`).
+* **Dev servers, watchers, anything that does not exit** → `start_process`. **NEVER** background with `&`/`nohup` inside `execute_container_command`: the call blocks until its timeout and then the whole process group is killed, or the process keeps running untracked with its output lost.
+
+**Recommended workflow:**
+1. `list_processes` first, to see what is already running and avoid starting duplicates. Like `docker ps`, it only shows running processes; pass `all=true` to also see exited/lost ones (e.g. to check why something died).
+2. `start_process` with a meaningful `name` and a `ready_pattern` so you know it actually came up — e.g. Vite `Local:.*http`, Uvicorn `Uvicorn running on`.
+3. `get_process_output` with `offset=next_offset` for incremental log reads instead of re-reading the whole log.
+4. `stop_process` when you are done, or before restarting a process.
+
+Processes persist after your session ends. When you finish, tell the user what you left running (they can inspect it from their host terminal with `devbox-ps`).
+
+**Binding:** any server you start must bind `0.0.0.0`, not `127.0.0.1`/`localhost`, or the developer cannot reach it from their host machine.
+
+**Service control:**
+* `list_services` — the in-scope services with status, health, uptime, and restart count.
+* `service_logs` — a container's stdout+stderr **from container start**, ideal for diagnosing startup errors (works on stopped containers too).
+* `restart_service` / `stop_service` / `start_service` — restart/stop/start a service's container. Restarting or stopping **kills any process you started with `start_process` in that container**.
+* Builds, container re-creation, `docker compose down`, and volume changes are **not** available via MCP. Ask the user to run `devbox-up`, `devbox-rebuild`, or `devbox-build` on the host.
+
+**Scope:** only services of the current DevBox project are reachable. Anything else answers `Service '<name>' not found or not allowed.` — do not try to work around it. Some services may additionally be protected by the user and answer the same way.
+
+**Limits:** the number of processes per container and each process's log size are capped by the user's configuration; `start_process` reports the limit when it is reached. If you hit the process cap, `stop_process` something first to free a slot.
+
+**Guardrails:** **NEVER** modify the `mcp` section of `devbox.json` — it defines your own scope and limits. If a limit blocks the task, ask the user.
 
 ## The 3-Way Path Mapping (CRITICAL)
 You are running in an isolated AI container. When you use the MCP Gateway, you are executing commands in a *different* container. You must translate paths between these two worlds:
