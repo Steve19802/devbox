@@ -26,6 +26,7 @@
 #       log         combined stdout+stderr, appended by the writer
 #       log_base    bytes dropped by log rotation (absolute offset base, starts 0)
 #       exitcode    written once the supervised command has finished
+#       ended_at    epoch seconds, written just before exitcode
 #
 # SUBCOMMANDS
 #   start <id>                     env: DEVBOX_CMD (required),
@@ -142,7 +143,14 @@ emit_record() {
     else
         _ec=null
     fi
-    _now=$(date +%s)
+    # Uptime freezes once the process has exited. Records written before
+    # ended_at existed fall back to the exitcode file's mtime.
+    _now=
+    if [ "$_status" = exited ]; then
+        _now=$(read_field "$_dir/ended_at")
+        [ -n "$_now" ] || _now=$(date -r "$_dir/exitcode" +%s 2>/dev/null)
+    fi
+    [ -n "$_now" ] || _now=$(date +%s)
     _uptime=$((_now - _started))
     [ "$_uptime" -ge 0 ] 2>/dev/null || _uptime=0
     printf '{"id":"%s","name":"%s","cmd":"%s","pid":%s,"status":"%s","exit_code":%s,"started_at":%s,"uptime":%s}\n' \
@@ -213,6 +221,7 @@ printf "%s" "$$" > "$dir/pid"
 wd=$!
 finish() {
   kill "$wd" 2>/dev/null
+  date +%s > "$dir/ended_at"
   printf "143" > "$dir/exitcode"
   exit 143
 }
@@ -220,6 +229,7 @@ trap finish TERM
 trap finish INT
 sh -c "$DEVBOX_CMD" </dev/null >>"$dir/log" 2>&1
 rc=$?
+date +%s > "$dir/ended_at"
 printf "%s" "$rc" > "$dir/exitcode"
 kill "$wd" 2>/dev/null
 trap - TERM INT
