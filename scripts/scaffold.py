@@ -1,15 +1,17 @@
-import copy
 import json
 import os
 import sys
 
-# Default MCP process/service-control configuration (kept in sync with
-# build/templates/devbox.base.json). Deep-copied wherever it is embedded.
-DEFAULT_MCP_CONFIG = {
-    "protected_services": [],
-    "exec": {"default_timeout": 180, "max_timeout": 3600, "max_output_kb": 64},
-    "processes": {"max_per_container": 5, "max_log_mb": 10},
-}
+from devbox_config import (
+    COMPOSE_CANDIDATES,
+    DEFAULT_COMPOSE_FILES,
+    DEFAULT_MCP_CONFIG,
+    load_config,
+    make_service,
+    new_config,
+    save_config,
+    write_architecture,
+)
 
 
 def load_manifest(build_dir):
@@ -93,7 +95,7 @@ def generate_compose_dev(services, inject_ide, manifest, output_dir):
         buf.append(f"      args:")
         buf.append(f"        - NEOVIM_VERSION=${{NEOVIM_VERSION:-stable}}")
         buf.append(f"        - LAZYGIT_VERSION=${{LAZYGIT_VERSION:-stable}}")
-        buf.append(f'    user: "${{UID}}:${{GID}}"')
+        buf.append(f'    user: "${{DEVBOX_UID:-1000}}:${{DEVBOX_GID:-1000}}"')
         buf.append(f"    volumes:")
         buf.append(f"      - ./src/{svc['name']}:/app")
         if inject_ide:
@@ -126,19 +128,22 @@ def generate_devbox_json(services, inject_ide, output_dir):
         print(f"  Skipped {path} (already exists)")
         return
 
-    content = {
-        "version": 1,
-        "services": services,
-        "inject_ide": inject_ide,
-        "compose_files": [
-            "docker-compose.yml",
-            "docker-compose.dev.yml",
-            "build/docker-compose.mcp.yml"
-        ],
-        "mcp": copy.deepcopy(DEFAULT_MCP_CONFIG),
-    }
-    with open(path, "w") as f:
-        f.write(json.dumps(content, indent=2) + "\n")
+    built = [
+        make_service(
+            svc["name"],
+            source=f"src/{svc['name']}",
+            workdir="/app",
+            context=f"src/{svc['name']}",
+            dockerfile="Dockerfile",
+            target="dev",
+            port=svc.get("port"),
+            runtime=svc.get("runtime"),
+            managed=True,
+        )
+        for svc in services
+    ]
+    cfg = new_config("scaffold", built, inject_ide)
+    save_config(output_dir, cfg)
     print(f"  Created {path}")
 
 
@@ -229,62 +234,55 @@ __pycache__/
 
 
 def generate_architecture(services, output_dir):
-    path = os.path.join(output_dir, "ARCHITECTURE.md")
-    if os.path.exists(path):
-        print(f"  Skipped {path} (already exists)")
-        return
+    """Write the DevBox architecture block without touching user text.
 
-    service_lines = "\n".join(
-        f"    │   ├── {svc['name']}/             <-- Service: {svc['name']}"
-        for svc in services
+    Kept backward-compatible with ``manage_service`` which calls it with plain
+    ``[{"name": n}, ...]`` dicts. When ``devbox.json`` exists the real config is
+    used (so adopted layouts are described accurately); otherwise a scaffold
+    config is built from ``services``. The write is marker-scoped and
+    idempotent.
+    """
+    cfg = load_config(output_dir)
+    if cfg is None:
+        built = [
+            make_service(
+                svc["name"],
+                source=f"src/{svc['name']}",
+                workdir="/app",
+                context=f"src/{svc['name']}",
+                dockerfile="Dockerfile",
+                target="dev",
+                port=svc.get("port"),
+                runtime=svc.get("runtime"),
+                managed=True,
+            )
+            for svc in services
+        ]
+        cfg = new_config("scaffold", built, False)
+    path = write_architecture(output_dir, cfg)
+    print(f"  Updated {path}")
+
+
+def find_existing_conflict(project_root):
+    """Return the file that makes this folder look like an existing project.
+
+    Checks ``devbox.json`` first, then :data:`COMPOSE_CANDIDATES`. Returns the
+    bare filename, or ``None`` when the folder is empty of DevBox material.
+    """
+    if os.path.exists(os.path.join(project_root, "devbox.json")):
+        return "devbox.json"
+    for candidate in COMPOSE_CANDIDATES:
+        if os.path.exists(os.path.join(project_root, candidate)):
+            return candidate
+    return None
+
+
+def _refuse_scaffold(filename):
+    print(
+        f"This folder already contains {filename}. "
+        "Use devbox-adopt for existing projects, or pass --force to scaffold anyway."
     )
-
-    run_examples = "\n".join(
-        f"* `devbox-run {svc['name']} <command>`" for svc in services
-    )
-
-    content = f"""# Project Architecture
-
-Welcome to the project! This repository uses the **DevBox Platform** for local development.
-
-## Directory Structure
-
-    .
-    ├── ai/                       <-- Project-specific AI overrides (agents/MCPs)
-    ├── build/                    <-- Immutable DevBox Infrastructure (Git Submodule/Template)
-    ├── src/                      <-- Application Code
-{service_lines}
-    │
-    ├── docker-compose.yml        <-- Production Base (Pure app services, no dev tools)
-    └── docker-compose.dev.yml    <-- Local Dev Overrides (Volume mounts, hot-reloading)
-
-## How to Develop Locally
-
-This project runs inside isolated Docker containers. Do not install runtimes or databases on your host machine.
-
-1. **Load the CLI Tools:** `source build/envsetup.sh`
-2. **Setup AI Tooling (Optional):** `devbox-ai-setup`
-3. **Start the Environment:** `devbox-up`
-
-### Working with the Code
-
-All code inside `src/` is volume-mounted into the containers. Changes you make will instantly hot-reload.
-
-If you need to run a command inside a container, use the wrapper script:
-{run_examples}
-
-### The 3-Layer Docker System
-
-We use a 3-tier architecture to maintain production parity:
-1. `docker-compose.yml` defines the core production services.
-2. `docker-compose.dev.yml` injects development tools and volume mounts.
-3. `build/docker-compose.mcp.yml` silently injects AI capabilities in the background.
-
-Please edit `docker-compose.dev.yml` for local testing, and only modify `docker-compose.yml` when adding new production services.
-"""
-    with open(path, "w") as f:
-        f.write(content)
-    print(f"  Created {path}")
+    sys.exit(1)
 
 
 def main():
@@ -295,6 +293,7 @@ def main():
     gid = os.environ.get("LOCAL_GID", os.environ.get("GID", "1000"))
 
     args_list = sys.argv[1:]
+    force = "--force" in args_list
 
     # Determine mode: CLI (--service flags) vs interactive
     service_flag_indices = [i for i, a in enumerate(args_list) if a == "--service"]
@@ -306,7 +305,8 @@ def main():
 
         i = 0
         while i < len(args_list):
-            if args_list[i] == "--service":
+            arg = args_list[i]
+            if arg == "--service":
                 i += 1
                 if i >= len(args_list):
                     print("--service requires a value (name:runtime:port)")
@@ -328,22 +328,34 @@ def main():
                     else manifest["runtimes"][runtime]["default_port"]
                 )
                 services.append({"name": name, "runtime": runtime, "port": port})
-            elif args_list[i] == "--inject-ide":
+            elif arg == "--inject-ide":
                 inject_ide = True
-            elif args_list[i] == "--project-root":
+            elif arg == "--force":
+                force = True
+            elif arg == "--project-root":
                 i += 1
                 if i < len(args_list):
                     project_root = args_list[i]
             else:
                 # First positional (non-flag) arg is the project root
-                if not args_list[i].startswith("--") and ":" not in args_list[i]:
-                    project_root = args_list[i]
+                if not arg.startswith("--") and ":" not in arg:
+                    project_root = arg
             i += 1
-    else:
-        project_root = args_list[0] if args_list else "."
-        services, inject_ide = interactive_wizard(manifest)
 
-    project_root = os.path.abspath(project_root)
+        project_root = os.path.abspath(project_root)
+        if not force:
+            conflict = find_existing_conflict(project_root)
+            if conflict:
+                _refuse_scaffold(conflict)
+    else:
+        positional = [a for a in args_list if not a.startswith("--")]
+        project_root = os.path.abspath(positional[0] if positional else ".")
+        # Guard before the wizard so we never prompt for an existing project.
+        if not force:
+            conflict = find_existing_conflict(project_root)
+            if conflict:
+                _refuse_scaffold(conflict)
+        services, inject_ide = interactive_wizard(manifest)
 
     print("\nScaffolding project...")
 
