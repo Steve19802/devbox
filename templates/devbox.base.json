@@ -1,16 +1,20 @@
 {
-  "version": 1,
-  "service": "my-app",
-  "dockerfile": "Dockerfile",
-  "dockerfile_context": ".",
-  "port": 5173,
-  "stages": {
-    "prod": "prod",
-    "dev": "dev"
-  },
+  "version": 2,
+  "mode": "scaffold",
+  "services": [
+    {
+      "name": "my-app",
+      "source": "src/my-app",
+      "workdir": "/app",
+      "context": "src/my-app",
+      "dockerfile": "Dockerfile",
+      "target": "dev",
+      "port": 5173,
+      "runtime": "node",
+      "managed": true
+    }
+  ],
   "inject_ide": false,
-  "has_firebase": false,
-  "preserve_env": [],
   "compose_files": [
     "docker-compose.yml",
     "docker-compose.dev.yml",
