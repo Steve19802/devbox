@@ -44,7 +44,7 @@ Please edit `docker-compose.dev.yml` for local testing, and only modify `docker-
 * **Dev servers, watchers, anything that does not exit** → `start_process`. **NEVER** background with `&`/`nohup` inside `execute_container_command`: the call blocks until its timeout and then the whole process group is killed, or the process keeps running untracked with its output lost.
 
 **Recommended workflow:**
-1. `list_processes` first, to see what is already running and avoid starting duplicates.
+1. `list_processes` first, to see what is already running and avoid starting duplicates. Like `docker ps`, it only shows running processes; pass `all=true` to also see exited/lost ones (e.g. to check why something died).
 2. `start_process` with a meaningful `name` and a `ready_pattern` so you know it actually came up — e.g. Vite `Local:.*http`, Uvicorn `Uvicorn running on`.
 3. `get_process_output` with `offset=next_offset` for incremental log reads instead of re-reading the whole log.
 4. `stop_process` when you are done, or before restarting a process.

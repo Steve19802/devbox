@@ -101,7 +101,7 @@ If you choose **No**:
 * **`devbox-up [args]`**: Starts the environment (attached by default; pass `-d` for detached mode).
 * **`devbox-down [args]`**: Gracefully stops the environment.
 * **`devbox-logs [service]`**: Tails logs for a specific service (or all services).
-* **`devbox-ps [service]`**: Table of the long-running processes the AI started (`SERVICE ID NAME STATUS UPTIME COMMAND`).
+* **`devbox-ps [-a] [service]`**: Table of the running long-running processes the AI started (`SERVICE ID NAME STATUS UPTIME COMMAND`). Like `docker ps`, pass `-a` to include exited/lost ones.
 * **`devbox-ps logs <service> <id> [-f]`**: Shows the last 200 lines of an AI-started process, or follows it until it exits with `-f`.
 * **`devbox-ps stop <service> <id> [grace]`**: Stops an AI-started process (default grace: 10s).
 * **`devbox-run <service> <command>`**: Executes a command inside a specific running container.
@@ -134,7 +134,7 @@ The AI connects to an isolated Python container running an HTTP Server-Sent Even
 | --- | --- |
 | `execute_container_command` | Run a short command in a container (configurable `timeout`). |
 | `start_process` | Start a long-running command (dev server/watcher) detached; optionally wait for a `ready_pattern`. |
-| `list_processes` | List supervised processes, in one service or across all running services. |
+| `list_processes` | List running supervised processes, in one service or across all running services; `all=true` also includes exited/lost ones (like `docker ps -a`). |
 | `get_process_output` | Read a started process's log; page forward with `offset=next_offset`. |
 | `stop_process` | Stop a started process (SIGTERM the group, SIGKILL after grace). |
 | `list_services` | List in-scope services: status, health, uptime, restart count. |

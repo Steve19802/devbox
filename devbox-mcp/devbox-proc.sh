@@ -32,7 +32,8 @@
 #   start <id>                     env: DEVBOX_CMD (required),
 #                                       DEVBOX_PROC_NAME (optional),
 #                                       DEVBOX_MAX_LOG_BYTES (optional, default 10485760)
-#   ps                             one JSON object per line, sorted by started_at
+#   ps [-a]                        one JSON object per line, sorted by started_at;
+#                                  running only, -a includes exited/lost ones
 #   logs <id> <tail_lines> [offset]  JSON header line, then raw log bytes
 #   stop <id> <grace_secs>         TERM the group, KILL after grace; prints JSON record
 #   fg <token>                     run DEVBOX_CMD in the foreground (execute_container_command)
@@ -282,12 +283,21 @@ do_start() {
 # ---------------------------------------------------------------------------
 
 do_ps() {
+    _all=0
+    case "${1:-}" in
+        '') ;;
+        -a) _all=1 ;;
+        *) err "usage: ps [-a]"; exit 2 ;;
+    esac
     _tmp=$(make_tmp)
     if [ -d "$STATE_ROOT" ]; then
         for _d in "$STATE_ROOT"/*; do
             [ -d "$_d" ] || continue
             _b=${_d##*/}
             case "$_b" in .*) continue ;; esac
+            if [ "$_all" -eq 0 ] && [ "$(status_of "$_d")" != running ]; then
+                continue
+            fi
             _sa=$(read_field "$_d/started_at")
             [ -n "$_sa" ] || _sa=0
             printf '%s\t%s\n' "$_sa" "$_d" >> "$_tmp"

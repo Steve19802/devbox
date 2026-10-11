@@ -536,8 +536,9 @@ def _line_with(text: str, pos: int) -> str:
     return text[start:end]
 
 
-async def _ps_records(container_id: str) -> list[dict]:
-    rc, out, err = await run_proc_script(container_id, "ps")
+async def _ps_records(container_id: str, include_all: bool = False) -> list[dict]:
+    args = ["ps", "-a"] if include_all else ["ps"]
+    rc, out, err = await run_proc_script(container_id, *args)
     if rc != 0:
         raise DockerError(err.strip() or f"devbox-proc.sh ps exited with {rc}")
     records: list[dict] = []
@@ -556,7 +557,7 @@ async def _ps_records(container_id: str) -> list[dict]:
 
 async def _find_record(container_id: str, pid: str) -> Optional[dict]:
     try:
-        for rec in await _ps_records(container_id):
+        for rec in await _ps_records(container_id, include_all=True):
             if rec.get("id") == pid:
                 return rec
     except DockerError:
@@ -691,6 +692,9 @@ async def handle_list_processes(arguments: dict) -> str:
     container = arguments.get("container")
     if container is not None and (not isinstance(container, str) or not container.strip()):
         return "Execution Error: 'container' must be a non-empty string."
+    include_all = arguments.get("all", False)
+    if not isinstance(include_all, bool):
+        return "Execution Error: 'all' must be a boolean."
 
     if container:
         info, error = await _resolve_running(container)
@@ -707,7 +711,7 @@ async def handle_list_processes(arguments: dict) -> str:
 
     # One failing container must not hide the others: collect per-container results.
     results = await asyncio.gather(
-        *(_ps_records(c.id) for c in targets), return_exceptions=True
+        *(_ps_records(c.id, include_all) for c in targets), return_exceptions=True
     )
     records: list[dict] = []
     for info, result in zip(targets, results):
@@ -983,15 +987,21 @@ def build_list_processes_tool(service_names: list[str]) -> Tool:
         name="list_processes",
         description=(
             "List supervised processes (JSON records with container, id, name, cmd, pid, "
-            "status, exit_code, started_at, uptime). Omit container to list across all "
-            "running services."
+            "status, exit_code, started_at, uptime). Like 'docker ps', only running "
+            "processes are listed by default; pass all=true (like 'docker ps -a') to "
+            "include exited and lost ones. Omit container to list across all running "
+            "services."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "container": _enum_prop(
                     service_names, "Optional service; omit for all running services"
-                )
+                ),
+                "all": {
+                    "type": "boolean",
+                    "description": "Include exited and lost processes (default: false)",
+                },
             },
         },
     )

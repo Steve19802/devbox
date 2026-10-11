@@ -252,7 +252,7 @@ print(s)
 }
 
 function _devbox_ps_usage() {
-  echo "❌ Usage: devbox-ps [service]"
+  echo "❌ Usage: devbox-ps [-a] [service]    (-a: include exited/lost processes)"
   echo "          devbox-ps logs <service> <id> [-f]"
   echo "          devbox-ps stop <service> <id> [grace]"
   echo "          devbox-ps help"
@@ -263,7 +263,12 @@ function _devbox_ps_usage() {
 
 # Table of agent-started processes across running services (or one service).
 function _devbox_ps_table() {
-  if [ "$#" -gt 1 ]; then
+  local ps_args=(ps)
+  if [ "${1:-}" = "-a" ]; then
+    ps_args+=(-a)
+    shift
+  fi
+  if [ "$#" -gt 1 ] || [[ "${1:-}" == -* ]]; then
     _devbox_ps_usage
     return 1
   fi
@@ -282,7 +287,7 @@ function _devbox_ps_table() {
   fi
 
   for svc in $services; do
-    _devbox_ps_proc_capture "$svc" ps
+    _devbox_ps_proc_capture "$svc" "${ps_args[@]}"
     if [ "$_DEVBOX_PS_RC" -ne 0 ]; then
       _devbox_ps_report_error "$svc" "" "$_DEVBOX_PS_RC"
       had_error=1
@@ -298,7 +303,11 @@ function _devbox_ps_table() {
 
   if [ -z "$data" ]; then
     if [ "$had_error" -eq 0 ]; then
-      echo "ℹ️  No processes are being supervised."
+      if [ "${#ps_args[@]}" -gt 1 ]; then
+        echo "ℹ️  No processes are being supervised."
+      else
+        echo "ℹ️  No running processes (use 'devbox-ps -a' to include exited ones)."
+      fi
     fi
     return 0
   fi
@@ -597,11 +606,11 @@ _devbox_service_completions() {
 _devbox_ps_completions() {
   local curr_arg=${COMP_WORDS[COMP_CWORD]}
 
-  # First argument: the subcommands plus service names.
-  # After 'logs'/'stop': service names.
+  # First argument: the subcommands, -a, plus service names.
+  # After 'logs'/'stop'/'-a': service names.
   if [ "$COMP_CWORD" -eq 1 ]; then
     local services=$(_get_services)
-    COMPREPLY=($(compgen -W "logs stop help ${services}" -- "${curr_arg}"))
+    COMPREPLY=($(compgen -W "logs stop help -a ${services}" -- "${curr_arg}"))
   else
     local services=$(_get_services)
     COMPREPLY=($(compgen -W "${services}" -- "${curr_arg}"))
